@@ -1,269 +1,212 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function InboxScreen() {
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskDescription, setTaskDescription] = useState('');
-  const [priority, setPriority] = useState('1');
-  const [showPriorityMenu, setShowPriorityMenu] = useState(false);
-  const [group, setGroup] = useState('');
-  const [assignee, setAssignee] = useState('');
-  const [category, setCategory] = useState('General');
-  const [status, setStatus] = useState('To-do');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [monthOffset, setMonthOffset] = useState(0);
-  const activeMonth = useMemo(() => {
-    const n = new Date();
-    return new Date(n.getFullYear(), n.getMonth() + monthOffset, 1);
-  }, [monthOffset]);
-  const monthLabel = useMemo(() => activeMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' }), [activeMonth]);
+  // Mock tasks
+  const [tasks, setTasks] = useState([
+    { id: '1', title: 'Review quarterly reports', description: 'Go through Q1 financial reports and prepare summary', priority: 'high', category: 'work', status: 'To Do', due: '2024-03-25' },
+    { id: '2', title: 'Buy groceries', description: 'Milk, eggs, bread, vegetables', priority: 'medium', category: 'shopping', status: 'In Progress', due: '2024-03-22' },
+    { id: '3', title: 'Plan team offsite', description: 'Venue shortlist and agenda draft', priority: 'low', category: 'work', status: 'Completed', due: '2024-04-10' },
+  ]);
+  const [categoryFilter] = useState('All Categories');
+  const [priorityFilter] = useState('All Priorities');
+  const [tab, setTab] = useState('All');
 
-  const daysInActiveMonth = useMemo(() => new Date(activeMonth.getFullYear(), activeMonth.getMonth() + 1, 0).getDate(), [activeMonth]);
-  const firstWeekday = useMemo(() => new Date(activeMonth.getFullYear(), activeMonth.getMonth(), 1).getDay(), [activeMonth]);
-  const weekLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Add Task modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newPriority, setNewPriority] = useState('Medium');
+  const [newCategory, setNewCategory] = useState('Personal');
+  const [newDue, setNewDue] = useState('');
 
-  const setDateFromParts = (y, m, d) => {
-    const mm = String(m + 1).padStart(2, '0');
-    const dd = String(d).padStart(2, '0');
-    setDate(`${y}-${mm}-${dd}`);
-    setShowDatePicker(false);
+  const isOverdue = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    const today = new Date();
+    return d < today && tab !== 'Completed';
   };
 
-  const [hour, setHour] = useState(9);
-  const [minute, setMinute] = useState(0);
-  const hourOptions = Array.from({ length: 24 }, (_, i) => i);
-  const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5);
-  const confirmTime = () => {
-    const hh = String(hour).padStart(2, '0');
-    const mm = String(minute).padStart(2, '0');
-    setTime(`${hh}:${mm}`);
-    setShowTimePicker(false);
-  };
+  const filtered = useMemo(() => {
+    return tasks.filter(t => {
+      const byCat = categoryFilter === 'All Categories' || t.category.toLowerCase() === categoryFilter.toLowerCase();
+      const byPr = priorityFilter === 'All Priorities' || t.priority.toLowerCase() === priorityFilter.toLowerCase();
+      const byTab = tab === 'All' || t.status === tab;
+      return byCat && byPr && byTab;
+    });
+  }, [tasks, categoryFilter, priorityFilter, tab]);
 
-  const submitTask = () => {
-    if (!taskTitle.trim() && !taskDescription.trim()) return;
-    // In a real app, send to backend or global state. Here we just clear.
-    setTaskTitle('');
-    setTaskDescription('');
-    setPriority('1');
-    setShowPriorityMenu(false);
-    setGroup('');
-    setAssignee('');
-    setCategory('General');
-    setStatus('To-do');
-    setDate('');
-    setTime('');
-  };
+  const countBy = (s) => tasks.filter(t => t.status === s).length;
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Create Task</Text>
-        <Text style={styles.subtitle}>Enter details to create a new task</Text>
+        <Text style={styles.title}>My Tasks</Text>
+        <Text style={styles.subtitle}>Manage your personal to-do list and stay organized</Text>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.emptyState}>
-            <Ionicons name="download-outline" size={64} color="#E0E0E0" />
-            <Text style={styles.emptyTitle}>No tasks yet</Text>
-            <Text style={styles.emptySubtitle}>Create a task using the composer below</Text>
-          </View>
-        </ScrollView>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Filters */}
+        <View style={styles.filterRow}>
+          <Pressable style={styles.filterChip}>
+            <Text style={styles.filterText}>{categoryFilter}</Text>
+            <Ionicons name="chevron-down" size={16} color="#6B7280" />
+          </Pressable>
+          <Pressable style={styles.filterChip}>
+            <Text style={styles.filterText}>{priorityFilter}</Text>
+            <Ionicons name="chevron-down" size={16} color="#6B7280" />
+          </Pressable>
+          <Pressable style={styles.addButton} onPress={() => setShowAddModal(true)}>
+            <Ionicons name="add" size={18} color="#fff" />
+            <Text style={styles.addButtonText}>Add Task</Text>
+          </Pressable>
+        </View>
 
-        <View style={styles.composerContainer}>
-          <View style={styles.handleBar} />
-          <View style={styles.composerHeader}>
-            <Pressable style={styles.priorityBadge} onPress={() => setShowPriorityMenu(!showPriorityMenu)}>
-              <Ionicons name="flame" size={14} color="#fff" />
-              <Text style={styles.priorityBadgeText}>{`Priority task ${priority}`}</Text>
-              <Ionicons name="chevron-up" size={14} color="#fff" />
-            </Pressable>
-            {showPriorityMenu && (
-              <View style={styles.priorityMenu}>
-                {(['1','2','3','4']).map(p => (
-                  <Pressable key={p} style={styles.priorityMenuItem} onPress={() => { setPriority(p); setShowPriorityMenu(false); }}>
-                    <Ionicons name="flame" size={12} color={p==='1' ? '#F44336' : p==='2' ? '#FFA726' : p==='3' ? '#4CAF50' : '#29B6F6'} />
-                    <Text style={styles.priorityMenuText}>{`Priority task ${p}`}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
+        {/* Summary cards */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryIconWrap}><Ionicons name="ellipse-outline" size={16} color="#9AA3AE" /></View>
+            <Text style={styles.summaryLabel}>To Do</Text>
+            <Text style={styles.summaryValue}>{countBy('To Do')}</Text>
           </View>
-
-          <TextInput
-            style={styles.composerTitle}
-            placeholder="eg : Meeting with client"
-            value={taskTitle}
-            onChangeText={setTaskTitle}
-            placeholderTextColor="#9AA0A6"
-          />
-          {/* Group / Project */}
-          <View style={styles.fieldRow}>
-            <View style={styles.fieldLeft}>
-              <Ionicons name="people-outline" size={18} color="#95A1AC" />
-              <Text style={styles.fieldLabel}>Group / Project</Text>
-            </View>
-            <TextInput
-              style={styles.fieldInput}
-              placeholder="e.g. Marketing Team"
-              value={group}
-              onChangeText={setGroup}
-              placeholderTextColor="#9AA0A6"
-            />
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryIconWrap}><Ionicons name="time-outline" size={16} color="#9AA3AE" /></View>
+            <Text style={styles.summaryLabel}>In Progress</Text>
+            <Text style={styles.summaryValue}>{countBy('In Progress')}</Text>
           </View>
-          {/* Assignee */}
-          <View style={styles.fieldRow}>
-            <View style={styles.fieldLeft}>
-              <Ionicons name="person-outline" size={18} color="#95A1AC" />
-              <Text style={styles.fieldLabel}>Assignee</Text>
-            </View>
-            <TextInput
-              style={styles.fieldInput}
-              placeholder="e.g. Alex Nguyen"
-              value={assignee}
-              onChangeText={setAssignee}
-              placeholderTextColor="#9AA0A6"
-            />
-          </View>
-          <TextInput
-            style={styles.composerDescription}
-            placeholder="Description"
-            value={taskDescription}
-            onChangeText={setTaskDescription}
-            placeholderTextColor="#9AA0A6"
-            multiline
-          />
-          {/* Category / Status */}
-          <View style={styles.tagRow}>
-            {['General','Design','Development','Research'].map(tag => (
-              <Pressable key={tag} style={[styles.tagChip, category===tag && styles.tagChipActive]} onPress={() => setCategory(tag)}>
-                <Text style={[styles.tagText, category===tag && styles.tagTextActive]}>{tag}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.statusRow}>
-            {['To-do','In Progress','Done'].map(s => (
-              <Pressable key={s} style={[styles.statusChip, status===s && styles.statusChipActive]} onPress={() => setStatus(s)}>
-                <Text style={[styles.statusText, status===s && styles.statusTextActive]}>{s}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {/* Date & Time */}
-          <View style={styles.datetimeRow}>
-            <Pressable style={styles.datetimeItem} onPress={() => setShowDatePicker(true)}>
-              <Ionicons name="calendar-outline" size={18} color="#95A1AC" />
-              <TextInput
-                style={styles.datetimeInput}
-                placeholder="YYYY-MM-DD"
-                value={date}
-                onChangeText={setDate}
-                placeholderTextColor="#9AA0A6"
-              />
-            </Pressable>
-            <Pressable style={styles.datetimeItem} onPress={() => setShowTimePicker(true)}>
-              <Ionicons name="time-outline" size={18} color="#95A1AC" />
-              <TextInput
-                style={styles.datetimeInput}
-                placeholder="HH:MM"
-                value={time}
-                onChangeText={setTime}
-                placeholderTextColor="#9AA0A6"
-              />
-            </Pressable>
-          </View>
-
-          <View style={styles.composerToolbar}>
-            <View style={styles.toolbarLeft}>
-              <Ionicons name="calendar-outline" size={18} color="#95A1AC" />
-              <Ionicons name="time-outline" size={18} color="#95A1AC" />
-              <Ionicons name="notifications-outline" size={18} color="#95A1AC" />
-              <Ionicons name="flag-outline" size={18} color="#95A1AC" />
-            </View>
-            <Pressable style={styles.sendButton} onPress={submitTask}>
-              <Ionicons name="send" size={18} color="#fff" />
-            </Pressable>
-          </View>
-
-          <View style={styles.emojiRow}>
-            {['😀','😁','😅','🤔','👏','😴','🤞'].map(e => (
-              <Text key={e} style={styles.emoji}>{e}</Text>
-            ))}
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryIconWrap}><Ionicons name="checkmark-circle-outline" size={16} color="#9AA3AE" /></View>
+            <Text style={styles.summaryLabel}>Completed</Text>
+            <Text style={styles.summaryValue}>{countBy('Completed')}</Text>
           </View>
         </View>
 
-        {/* Date Picker Modal */}
-        {showDatePicker && (
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Pressable onPress={() => setMonthOffset(monthOffset - 1)}>
-                  <Ionicons name="chevron-back" size={20} color="#333" />
+        {/* Tabs */}
+        <View style={styles.tabsRow}>
+          {['All','To Do','In Progress','Completed'].map(name => (
+            <Pressable key={name} onPress={() => setTab(name)} style={[styles.tabPill, tab===name && styles.tabPillActive]}>
+              <Text style={[styles.tabText, tab===name && styles.tabTextActive]}>{name}{name==='All' ? ` (${tasks.length})` : ''}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Task list */}
+        <View style={{ gap: 12, marginTop: 12, marginBottom: 24 }}>
+          {filtered.map(t => (
+            <View key={t.id} style={styles.taskCard}>
+              <View style={styles.taskHeader}>
+                <View style={styles.taskTitleRow}>
+                  <View style={styles.checkbox} />
+                  <Text style={styles.taskTitle}>{t.title}</Text>
+                </View>
+                <Pressable>
+                  <Ionicons name="trash-outline" size={18} color="#9AA3AE" />
                 </Pressable>
-                <Text style={styles.modalTitle}>{monthLabel}</Text>
-                <Pressable onPress={() => setMonthOffset(monthOffset + 1)}>
-                  <Ionicons name="chevron-forward" size={20} color="#333" />
-                </Pressable>
               </View>
-              <View style={styles.weekRow}>
-                {weekLabels.map(w => (
-                  <Text key={w} style={styles.weekLabel}>{w}</Text>
-                ))}
+              <Text style={styles.taskDesc}>{t.description}</Text>
+              <View style={styles.taskMetaRow}>
+                <View style={[styles.badge, styles[`priority_${t.priority}`]]}><Text style={[styles.badgeText, styles[`priorityText_${t.priority}`]]}>{t.priority}</Text></View>
+                <View style={[styles.badge, styles.badgeSoft]}><Ionicons name="pricetag" size={12} color="#4B5563" /><Text style={styles.badgeSoftText}>{t.category}</Text></View>
+                <View style={[styles.badge, isOverdue(t.due) ? styles.badgeDanger : styles.badgeSoft]}>
+                  <Ionicons name="calendar" size={12} color={isOverdue(t.due) ? '#DC2626' : '#4B5563'} />
+                  <Text style={[styles.badgeSoftText, isOverdue(t.due) && { color: '#DC2626', fontWeight: '700' }]}>{new Date(t.due).toDateString().slice(4)}</Text>
+                </View>
               </View>
-              <View style={styles.calendarGrid}>
-                {Array.from({ length: firstWeekday }).map((_, i) => (
-                  <View key={`empty-${i}`} style={styles.calendarCell} />
-                ))}
-                {Array.from({ length: daysInActiveMonth }, (_, i) => i + 1).map(d => (
-                  <Pressable key={d} style={styles.calendarCell} onPress={() => setDateFromParts(activeMonth.getFullYear(), activeMonth.getMonth(), d)}>
-                    <Text style={styles.calendarDay}>{d}</Text>
-                  </Pressable>
-                ))}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+      {showAddModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.addModalCard}>
+            <View style={styles.addHeaderRow}>
+              <View>
+                <Text style={styles.addTitle}>Add New Task</Text>
+                <Text style={styles.addSubtitle}>Create a new personal task to keep track of your to-dos</Text>
               </View>
-              <Pressable style={styles.modalClose} onPress={() => setShowDatePicker(false)}>
-                <Text style={styles.modalCloseText}>Close</Text>
+              <Pressable onPress={() => setShowAddModal(false)}>
+                <Ionicons name="close" size={20} color="#6B7280" />
+              </Pressable>
+            </View>
+
+            <View style={{ gap: 12 }}>
+              <View>
+                <Text style={styles.inputLabel}>Title</Text>
+                <View style={styles.inputField}><Text style={styles.hiddenText}>{newTitle}</Text></View>
+                <View style={styles.textInputWrap}>
+                  <Text
+                    style={styles.textInput}
+                    onPressIn={() => {}}
+                  >{newTitle || 'Enter task title'}</Text>
+                </View>
+              </View>
+
+              <View>
+                <Text style={styles.inputLabel}>Description</Text>
+                <View style={styles.textAreaWrap}>
+                  <Text
+                    style={styles.textArea}
+                  >{newDescription || 'Add details about this task'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.row2}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Priority</Text>
+                  <View style={styles.selectField}>
+                    <Text style={styles.selectText}>{newPriority}</Text>
+                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                  </View>
+                </View>
+                <View style={{ width: 14 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Category</Text>
+                  <View style={styles.selectField}>
+                    <Text style={styles.selectText}>{newCategory}</Text>
+                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                  </View>
+                </View>
+              </View>
+
+              <View>
+                <Text style={styles.inputLabel}>Due Date (Optional)</Text>
+                <View style={styles.dateField}>
+                  <Text style={styles.datePlaceholder}>{newDue || 'mm/dd/yyyy'}</Text>
+                  <Ionicons name="calendar-clear" size={16} color="#6B7280" />
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.cancelBtn} onPress={() => setShowAddModal(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.createBtn}
+                onPress={() => {
+                  const id = String(Date.now());
+                  const mappedPriority = newPriority.toLowerCase();
+                  const mappedCategory = newCategory.toLowerCase();
+                  setTasks([
+                    { id, title: newTitle || 'Untitled', description: newDescription, priority: mappedPriority, category: mappedCategory, status: 'To Do', due: newDue ? new Date(newDue).toISOString().slice(0,10) : '' },
+                    ...tasks,
+                  ]);
+                  setShowAddModal(false);
+                  setNewTitle('');
+                  setNewDescription('');
+                  setNewPriority('Medium');
+                  setNewCategory('Personal');
+                  setNewDue('');
+                  setTab('All');
+                }}
+              >
+                <Text style={styles.createText}>Create Task</Text>
               </Pressable>
             </View>
           </View>
-        )}
-
-        {/* Time Picker Modal */}
-        {showTimePicker && (
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Select time</Text>
-              <View style={styles.timePickRow}>
-                <View style={styles.timePickCol}>
-                  {hourOptions.map(h => (
-                    <Pressable key={h} style={[styles.timePickItem, hour===h && styles.timePickItemActive]} onPress={() => setHour(h)}>
-                      <Text style={[styles.timePickText, hour===h && styles.timePickTextActive]}>{String(h).padStart(2,'0')}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <View style={styles.timePickCol}>
-                  {minuteOptions.map(m => (
-                    <Pressable key={m} style={[styles.timePickItem, minute===m && styles.timePickItemActive]} onPress={() => setMinute(m)}>
-                      <Text style={[styles.timePickText, minute===m && styles.timePickTextActive]}>{String(m).padStart(2,'0')}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-              <View style={styles.timeActions}>
-                <Pressable style={styles.modalClose} onPress={() => setShowTimePicker(false)}>
-                  <Text style={styles.modalCloseText}>Cancel</Text>
-                </Pressable>
-                <Pressable style={[styles.modalClose,{ backgroundColor: '#029688' }]} onPress={confirmTime}>
-                  <Text style={[styles.modalCloseText,{ color: '#fff' }]}>Set</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        )}
-      </KeyboardAvoidingView>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -281,7 +224,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   title: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '700',
     color: '#333',
     marginBottom: 4,
@@ -294,311 +237,291 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
-  // Composer
-  composerContainer: {
-    backgroundColor: '#fff',
-    paddingTop: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: -2 } },
-      android: { elevation: 12 },
-    }),
-  },
-  handleBar: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E0E0E0',
-    marginBottom: 8,
-  },
-  composerHeader: {
+  // New - filters
+  filterRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: 10,
+    marginTop: 12,
   },
-  priorityBadge: {
+  filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#029688',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  priorityBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  priorityMenu: {
-    position: 'absolute',
-    top: 32,
-    left: 0,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingVertical: 6,
-    width: 180,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-      android: { elevation: 8 },
-    }),
-  },
-  priorityMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  priorityMenuText: {
-    color: '#333',
-    fontSize: 12,
-  },
-  composerTitle: {
-    fontSize: 16,
-    color: '#2E2E2E',
     paddingVertical: 10,
+    borderRadius: 10,
   },
-  composerDescription: {
+  filterText: {
+    color: '#374151',
     fontSize: 14,
-    color: '#5F6368',
-    paddingVertical: 10,
   },
-  fieldRow: {
+  addButton: {
+    marginLeft: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F3F4',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  fieldLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  fieldLabel: {
-    color: '#5F6368',
-    fontSize: 13,
-  },
-  fieldInput: {
-    flex: 1,
-    marginLeft: 12,
-    textAlign: 'right',
-    color: '#2E2E2E',
-    fontSize: 14,
-    paddingVertical: 6,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-  },
-  tagChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: '#EDE7F6',
-  },
-  tagChipActive: {
-    backgroundColor: '#9C27B0',
-  },
-  tagText: {
-    fontSize: 12,
-    color: '#9C27B0',
-    fontWeight: '600',
-  },
-  tagTextActive: {
+  addButtonText: {
     color: '#fff',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-  },
-  statusChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: '#E3F2FD',
-  },
-  statusChipActive: {
-    backgroundColor: '#9C27B0',
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#1E88E5',
     fontWeight: '700',
-  },
-  statusTextActive: {
-    color: '#fff',
-  },
-  datetimeRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  datetimeItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F7F8FA',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  datetimeInput: {
-    flex: 1,
     fontSize: 14,
-    color: '#2E2E2E',
   },
-  composerToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  toolbarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#029688',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emojiRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginTop: 10,
-  },
-  emoji: {
-    fontSize: 18,
-  },
-  // Modal
+  // Add Task modal styles
   modalOverlay: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     top: 0,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 16,
   },
-  modalHeader: {
+  addModalCard: {
+    width: '100%',
+    maxWidth: 560,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+  },
+  addHeaderRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  modalTitle: {
-    fontSize: 16,
+  addTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  addSubtitle: {
+    marginTop: 4,
+    color: '#6B7280',
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#111827',
     fontWeight: '700',
-    color: '#333',
-  },
-  weekRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 6,
   },
-  weekLabel: {
-    width: `${100/7}%`,
-    textAlign: 'center',
-    color: '#9AA3AE',
-    fontSize: 12,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  calendarCell: {
-    width: `${100/7}%`,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  calendarDay: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    lineHeight: 36,
-    color: '#333',
-  },
-  modalClose: {
-    alignSelf: 'center',
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#EEF2F7',
-  },
-  modalCloseText: {
-    color: '#333',
-    fontWeight: '600',
-  },
-  timePickRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  timePickCol: {
-    flex: 1,
-    maxHeight: 220,
-  },
-  timePickItem: {
-    paddingVertical: 10,
-    alignItems: 'center',
+  textInputWrap: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
     borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  timePickItemActive: {
-    backgroundColor: '#EDE7F6',
+  textInput: {
+    color: '#6B7280',
   },
-  timePickText: {
-    fontSize: 16,
-    color: '#333',
+  textAreaWrap: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 84,
   },
-  timePickTextActive: {
-    color: '#9C27B0',
-    fontWeight: '700',
+  textArea: {
+    color: '#6B7280',
   },
-  timeActions: {
+  row2: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectField: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
+    alignItems: 'center',
   },
+  selectText: {
+    color: '#374151',
+  },
+  dateField: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  datePlaceholder: {
+    color: '#6B7280',
+  },
+  modalActions: {
+    marginTop: 16,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  cancelBtn: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  cancelText: {
+    color: '#111827',
+    fontWeight: '600',
+  },
+  createBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  createText: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  // Summary cards
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 14,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  summaryIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    color: '#6B7280',
+    fontSize: 14,
+  },
+  summaryValue: {
+    marginTop: 8,
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  // Tabs
+  tabsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
+  },
+  tabPill: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  tabPillActive: {
+    backgroundColor: '#E0E7FF',
+    borderWidth: 1,
+    borderColor: '#6366F1',
+  },
+  tabText: {
+    color: '#374151',
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#3730A3',
+  },
+  // Task list
+  taskCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+  },
+  taskHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  taskTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+  },
+  taskTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  taskDesc: {
+    color: '#6B7280',
+    marginTop: 6,
+  },
+  taskMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    flexWrap: 'wrap',
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  badgeSoft: {
+    backgroundColor: '#F3F4F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  badgeSoftText: {
+    color: '#4B5563',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  badgeDanger: {
+    backgroundColor: '#FEE2E2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priority_high: { backgroundColor: '#FDE8E8' },
+  priority_medium: { backgroundColor: '#FEF3C7' },
+  priority_low: { backgroundColor: '#DCFCE7' },
+  priorityText_high: { color: '#DC2626', fontWeight: '700', fontSize: 12 },
+  priorityText_medium: { color: '#D97706', fontWeight: '700', fontSize: 12 },
+  priorityText_low: { color: '#16A34A', fontWeight: '700', fontSize: 12 },
 });
