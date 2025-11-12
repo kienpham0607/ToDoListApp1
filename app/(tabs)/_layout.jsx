@@ -69,9 +69,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="grid"
+        name="projects"
         options={{
-          title: 'Grid',
+          title: 'Projects',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons 
               name={focused ? 'grid' : 'grid-outline'} 

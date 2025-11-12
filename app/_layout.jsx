@@ -18,6 +18,14 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="theme-selection" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen 
+          name="create-project" 
+          options={{ 
+            headerShown: true,
+            title: 'Create Projects',
+            headerBackTitle: 'Back'
+          }} 
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
