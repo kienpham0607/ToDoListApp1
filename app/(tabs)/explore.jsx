@@ -1,67 +1,120 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function ProfileScreen() {
-  const menuItems = [
-    { icon: 'person-outline', title: 'Profile', subtitle: 'Manage your account' },
-    { icon: 'notifications-outline', title: 'Notifications', subtitle: 'Customize alerts' },
-    { icon: 'color-palette-outline', title: 'Theme', subtitle: 'Light / Dark mode' },
-    { icon: 'stats-chart-outline', title: 'Statistics', subtitle: 'View your progress' },
-    { icon: 'settings-outline', title: 'Settings', subtitle: 'App preferences' },
-    { icon: 'help-circle-outline', title: 'Help & Support', subtitle: 'Get assistance' },
+export default function MoreScreen() {
+  const featureItems = [
+    {
+      icon: 'chatbubble-ellipses-outline',
+      title: 'Messages',
+      subtitle: 'Team chat',
+      iconColor: '#6366F1',
+      iconBg: '#EEF2FF',
+    },
+    {
+      icon: 'document-text-outline',
+      title: 'Documents',
+      subtitle: 'Files & docs',
+      iconColor: '#2563EB',
+      iconBg: '#EFF6FF',
+    },
+    {
+      icon: 'wallet-outline',
+      title: 'Budget',
+      subtitle: 'Track expenses',
+      iconColor: '#0EA5E9',
+      iconBg: '#E0F2FE',
+    },
+    {
+      icon: 'people-outline',
+      title: 'Team',
+      subtitle: 'Manage members',
+      iconColor: '#2563EB',
+      iconBg: '#E0ECFF',
+    },
   ];
+
+  const settingsItems = [
+    {
+      icon: 'settings-outline',
+      title: 'Settings',
+      subtitle: 'Preferences',
+      iconColor: '#6B7280',
+      iconBg: '#F3F4F6',
+    },
+    {
+      icon: 'help-circle-outline',
+      title: 'Help & Support',
+      subtitle: 'Get assistance',
+      iconColor: '#6B7280',
+      iconBg: '#F3F4F6',
+    },
+  ];
+
+  const renderItem = (item, isLast = false) => (
+    <Pressable key={item.title} style={[styles.listItem, isLast && styles.listItemLast]}>
+      <View style={styles.listItemLeft}>
+        <View style={[styles.iconWrapper, { backgroundColor: item.iconBg }]}>
+          <Ionicons name={item.icon} size={20} color={item.iconColor} />
+        </View>
+        <View>
+          <Text style={styles.itemTitle}>{item.title}</Text>
+          <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
+    </Pressable>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>More</Text>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.profileSection}>
-          <View style={styles.avatarContainer}>
-            <Ionicons name="person" size={40} color="#029688" />
-          </View>
-          <Text style={styles.userName}>John Doe</Text>
-          <Text style={styles.userEmail}>john.doe@example.com</Text>
-        </View>
-
-        <View style={styles.menuSection}>
-          {menuItems.map((item, index) => (
-            <Pressable key={index} style={styles.menuItem}>
-              <View style={styles.menuItemLeft}>
-                <View style={styles.menuIcon}>
-                  <Ionicons name={item.icon} size={24} color="#029688" />
-                </View>
-                <View style={styles.menuText}>
-                  <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.profileCard}>
+          <View style={styles.profileTopRow}>
+            <View style={styles.profileInfo}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>AU</Text>
+              </View>
+              <View>
+                <Text style={styles.profileName}>Admin User</Text>
+                <Text style={styles.profileRole}>Admin</Text>
+              </View>
+            </View>
+            <View style={styles.actions}>
+              <View style={styles.notification}>
+                <Ionicons name="notifications-outline" size={22} color="#111827" />
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>2</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#ccc" />
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.statsSection}>
-          <Text style={styles.statsTitle}>Your Progress</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>24</Text>
-              <Text style={styles.statLabel}>Tasks Completed</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>5</Text>
-              <Text style={styles.statLabel}>Days Streak</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>12</Text>
-              <Text style={styles.statLabel}>Tasks Pending</Text>
             </View>
           </View>
         </View>
+
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>More</Text>
+          <Text style={styles.pageSubtitle}>Additional features and settings</Text>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Features</Text>
+          <View style={styles.sectionList}>
+            {featureItems.map((item, index) => renderItem(item, index === featureItems.length - 1))}
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Settings</Text>
+          <View style={styles.sectionList}>
+            {settingsItems.map((item, index) => renderItem(item, index === settingsItems.length - 1))}
+          </View>
+        </View>
+
+        <Pressable style={styles.logoutButton}>
+          <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.logoutText}>Log Out</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -70,116 +123,190 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#333',
+    backgroundColor: '#F3F4F6',
   },
   content: {
-    flex: 1,
-  },
-  profileSection: {
-    alignItems: 'center',
-    paddingVertical: 30,
-    backgroundColor: '#fff',
-    marginBottom: 20,
-  },
-  avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#f0f0f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  userEmail: {
-    fontSize: 16,
-    color: '#666',
-  },
-  menuSection: {
-    backgroundColor: '#fff',
-    marginBottom: 20,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  menuIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0f8ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  menuText: {
-    flex: 1,
-  },
-  menuTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 2,
-  },
-  menuSubtitle: {
-    fontSize: 14,
-    color: '#666',
-  },
-  statsSection: {
-    backgroundColor: '#fff',
     padding: 20,
-    marginBottom: 20,
+    paddingBottom: 40,
+    gap: 20,
   },
-  statsTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 16,
+  profileCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 18,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  statsGrid: {
+  profileTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  statItem: {
     alignItems: 'center',
-    flex: 1,
   },
-  statNumber: {
-    fontSize: 24,
+  profileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 20,
     fontWeight: '700',
-    color: '#029688',
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  profileRole: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  notification: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  pageHeader: {
+    paddingHorizontal: 4,
+  },
+  pageTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#111827',
     marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
+  pageSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  sectionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 18,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  sectionList: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  listItemLast: {
+    borderBottomWidth: 0,
+  },
+  listItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  iconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  itemSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  logoutButton: {
+    marginTop: 8,
+    backgroundColor: '#DC2626',
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#DC2626',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  logoutText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });

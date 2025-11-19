@@ -86,6 +86,7 @@ export default function CreateProjectScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Content */}
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={true}
@@ -219,7 +220,7 @@ export default function CreateProjectScreen() {
         {/* Project Manager */}
         <View 
           ref={managerDropdownRef}
-          style={[styles.formGroup, { zIndex: 1, position: 'relative' }]}
+          style={[styles.formGroup, { zIndex: showManagerPicker ? 10010 : 1, position: 'relative' }]}
           onLayout={(event) => {
             const { y, height } = event.nativeEvent.layout;
             setManagerLayout({ y, height });
@@ -229,7 +230,7 @@ export default function CreateProjectScreen() {
             <Text style={styles.label}>Project Manager</Text>
             <Text style={styles.requiredAsterisk}> *</Text>
           </View>
-          <View style={styles.dropdownContainer}>
+          <View style={[styles.dropdownContainer, { zIndex: showManagerPicker ? 10011 : 9999 }]}>
             <Pressable 
               style={styles.dropdown}
               onPress={() => {
@@ -284,7 +285,7 @@ export default function CreateProjectScreen() {
               />
             </Pressable>
             {showManagerPicker && (
-              <View style={[styles.dropdownList, { zIndex: 10001, elevation: 25 }]}>
+              <View style={[styles.dropdownList, styles.managerDropdownList]}>
                 {projectManagers.map((manager, index) => (
                   <Pressable
                     key={index}
@@ -317,7 +318,7 @@ export default function CreateProjectScreen() {
         {/* Team Members */}
         <View 
           ref={teamMembersDropdownRef}
-          style={[styles.formGroup, { zIndex: 10001 }]}
+          style={[styles.formGroup, { zIndex: showManagerPicker ? 1 : 10001 }]}
           onLayout={(event) => {
             const { y, height } = event.nativeEvent.layout;
             setTeamMembersLayout({ y, height });
@@ -443,7 +444,7 @@ export default function CreateProjectScreen() {
         </View>
 
         {/* Action Buttons */}
-        <View style={[styles.modalActions, { zIndex: 1, position: 'relative' }]}>
+        <View style={[styles.modalActions, { zIndex: showManagerPicker ? 1 : 1, position: 'relative' }]}>
           <Pressable style={styles.cancelButton} onPress={() => router.back()}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </Pressable>
@@ -621,6 +622,21 @@ const styles = StyleSheet.create({
       },
       android: {
         elevation: 20,
+      },
+    }),
+  },
+  managerDropdownList: {
+    zIndex: 10012,
+    elevation: 30,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 30,
       },
     }),
   },
