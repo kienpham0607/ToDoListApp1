@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function InboxScreen() {
@@ -21,6 +21,12 @@ export default function InboxScreen() {
   const [newPriority, setNewPriority] = useState('Medium');
   const [newCategory, setNewCategory] = useState('Personal');
   const [newDue, setNewDue] = useState('');
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const priorities = ['Low', 'Medium', 'High'];
+  const categories = ['Personal', 'Work', 'Shopping', 'Health', 'Other'];
 
   const isOverdue = (dateStr) => {
     if (!dateStr) return false;
@@ -117,9 +123,17 @@ export default function InboxScreen() {
           ))}
         </View>
       </ScrollView>
-      {showAddModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.addModalCard}>
+      <Modal
+        visible={showAddModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowAddModal(false)}
+        >
+          <Pressable style={styles.addModalCard} onPress={(e) => e.stopPropagation()}>
             <View style={styles.addHeaderRow}>
               <View>
                 <Text style={styles.addTitle}>Add New Task</Text>
@@ -130,66 +144,136 @@ export default function InboxScreen() {
               </Pressable>
             </View>
 
-            <View style={{ gap: 12 }}>
-              <View>
-                <Text style={styles.inputLabel}>Title</Text>
-                <View style={styles.inputField}><Text style={styles.hiddenText}>{newTitle}</Text></View>
-                <View style={styles.textInputWrap}>
-                  <Text
-                    style={styles.textInput}
-                    onPressIn={() => {}}
-                  >{newTitle || 'Enter task title'}</Text>
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 12 }}>
+                {/* Title Input */}
+                <View>
+                  <Text style={styles.inputLabel}>Title</Text>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Enter task title"
+                    placeholderTextColor="#9CA3AF"
+                    value={newTitle}
+                    onChangeText={setNewTitle}
+                  />
                 </View>
-              </View>
 
-              <View>
-                <Text style={styles.inputLabel}>Description</Text>
-                <View style={styles.textAreaWrap}>
-                  <Text
-                    style={styles.textArea}
-                  >{newDescription || 'Add details about this task'}</Text>
+                {/* Description Input */}
+                <View>
+                  <Text style={styles.inputLabel}>Description</Text>
+                  <TextInput
+                    style={styles.textAreaField}
+                    placeholder="Add details about this task"
+                    placeholderTextColor="#9CA3AF"
+                    value={newDescription}
+                    onChangeText={setNewDescription}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
                 </View>
-              </View>
 
-              <View style={styles.row2}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Priority</Text>
-                  <View style={styles.selectField}>
-                    <Text style={styles.selectText}>{newPriority}</Text>
-                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                {/* Priority and Category Row */}
+                <View style={styles.row2}>
+                  <View style={styles.dropdownWrapper}>
+                    <Text style={styles.inputLabel}>Priority</Text>
+                    <Pressable
+                      style={styles.selectField}
+                      onPress={() => {
+                        setShowPriorityDropdown(!showPriorityDropdown);
+                        setShowCategoryDropdown(false);
+                      }}
+                    >
+                      <Text style={styles.selectText}>{newPriority}</Text>
+                      <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                    </Pressable>
+                    {showPriorityDropdown && (
+                      <View style={styles.dropdownList}>
+                        {priorities.map((p) => (
+                          <Pressable
+                            key={p}
+                            style={styles.dropdownItem}
+                            onPress={() => {
+                              setNewPriority(p);
+                              setShowPriorityDropdown(false);
+                            }}
+                          >
+                            <Text style={styles.dropdownItemText}>{p}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ width: 14 }} />
+                  <View style={styles.dropdownWrapper}>
+                    <Text style={styles.inputLabel}>Category</Text>
+                    <Pressable
+                      style={styles.selectField}
+                      onPress={() => {
+                        setShowCategoryDropdown(!showCategoryDropdown);
+                        setShowPriorityDropdown(false);
+                      }}
+                    >
+                      <Text style={styles.selectText}>{newCategory}</Text>
+                      <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                    </Pressable>
+                    {showCategoryDropdown && (
+                      <View style={styles.dropdownList}>
+                        {categories.map((c) => (
+                          <Pressable
+                            key={c}
+                            style={styles.dropdownItem}
+                            onPress={() => {
+                              setNewCategory(c);
+                              setShowCategoryDropdown(false);
+                            }}
+                          >
+                            <Text style={styles.dropdownItemText}>{c}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
                   </View>
                 </View>
-                <View style={{ width: 14 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>Category</Text>
-                  <View style={styles.selectField}>
-                    <Text style={styles.selectText}>{newCategory}</Text>
-                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
-                  </View>
-                </View>
-              </View>
 
-              <View>
-                <Text style={styles.inputLabel}>Due Date (Optional)</Text>
-                <View style={styles.dateField}>
-                  <Text style={styles.datePlaceholder}>{newDue || 'mm/dd/yyyy'}</Text>
-                  <Ionicons name="calendar-clear" size={16} color="#6B7280" />
+                {/* Due Date */}
+                <View>
+                  <Text style={styles.inputLabel}>Due Date (Optional)</Text>
+                  <Pressable
+                    style={styles.dateField}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text style={[styles.datePlaceholder, newDue && { color: '#111827' }]}>
+                      {newDue ? new Date(newDue).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'mm/dd/yyyy'}
+                    </Text>
+                    <Ionicons name="calendar-clear" size={16} color="#6B7280" />
+                  </Pressable>
                 </View>
               </View>
-            </View>
+            </ScrollView>
 
             <View style={styles.modalActions}>
-              <Pressable style={styles.cancelBtn} onPress={() => setShowAddModal(false)}>
+              <Pressable style={styles.cancelBtn} onPress={() => {
+                setShowAddModal(false);
+                setNewTitle('');
+                setNewDescription('');
+                setNewPriority('Medium');
+                setNewCategory('Personal');
+                setNewDue('');
+              }}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </Pressable>
               <Pressable
                 style={styles.createBtn}
                 onPress={() => {
+                  if (!newTitle.trim()) {
+                    return;
+                  }
                   const id = String(Date.now());
                   const mappedPriority = newPriority.toLowerCase();
                   const mappedCategory = newCategory.toLowerCase();
                   setTasks([
-                    { id, title: newTitle || 'Untitled', description: newDescription, priority: mappedPriority, category: mappedCategory, status: 'To Do', due: newDue ? new Date(newDue).toISOString().slice(0,10) : '' },
+                    { id, title: newTitle, description: newDescription, priority: mappedPriority, category: mappedCategory, status: 'To Do', due: newDue ? new Date(newDue).toISOString().slice(0,10) : '' },
                     ...tasks,
                   ]);
                   setShowAddModal(false);
@@ -204,9 +288,47 @@ export default function InboxScreen() {
                 <Text style={styles.createText}>Create Task</Text>
               </Pressable>
             </View>
-          </View>
-        </View>
-      )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Date Picker Modal */}
+      <Modal
+        visible={showDatePicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowDatePicker(false)}
+        >
+          <Pressable style={styles.datePickerContent} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.datePickerTitle}>Select Due Date</Text>
+            <TextInput
+              style={styles.datePickerInput}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9CA3AF"
+              value={newDue}
+              onChangeText={setNewDue}
+            />
+            <View style={styles.datePickerButtons}>
+              <Pressable 
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.datePickerButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable 
+                style={[styles.datePickerButton, styles.datePickerButtonPrimary]}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.datePickerButtonTextPrimary}>Confirm</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -285,6 +407,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
+    zIndex: 9999,
   },
   addModalCard: {
     width: '100%',
@@ -292,6 +415,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 14,
     padding: 16,
+    zIndex: 10000,
+    elevation: 10000,
+    overflow: 'visible',
   },
   addHeaderRow: {
     flexDirection: 'row',
@@ -308,24 +434,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: '#6B7280',
   },
+  modalScroll: {
+    maxHeight: 400,
+    zIndex: 1,
+    overflow: 'visible',
+  },
   inputLabel: {
     fontSize: 14,
     color: '#111827',
     fontWeight: '700',
     marginBottom: 6,
   },
-  textInputWrap: {
+  inputField: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#F9FAFB',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    fontSize: 14,
+    color: '#111827',
   },
-  textInput: {
-    color: '#6B7280',
-  },
-  textAreaWrap: {
+  textAreaField: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#F9FAFB',
@@ -333,13 +463,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     minHeight: 84,
+    fontSize: 14,
+    color: '#111827',
   },
-  textArea: {
-    color: '#6B7280',
+  dropdownWrapper: {
+    flex: 1,
+    position: 'relative',
+    zIndex: 10001,
+    overflow: 'visible',
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginTop: 4,
+    zIndex: 10002,
+    elevation: 10002,
+    overflow: 'visible',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 10002,
+      },
+    }),
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#111827',
   },
   row2: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    overflow: 'visible',
   },
   selectField: {
     borderWidth: 1,
@@ -394,6 +565,66 @@ const styles = StyleSheet.create({
   createText: {
     color: '#fff',
     fontWeight: '800',
+  },
+  datePickerContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 400,
+    padding: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  datePickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+  },
+  datePickerInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 14,
+    color: '#111827',
+    marginBottom: 20,
+  },
+  datePickerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  datePickerButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePickerButtonPrimary: {
+    backgroundColor: '#2563EB',
+  },
+  datePickerButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  datePickerButtonTextPrimary: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
   },
   // Summary cards
   summaryRow: {
