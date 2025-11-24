@@ -26,6 +26,36 @@ export default function RootLayout() {
             headerBackTitle: 'Back'
           }} 
         />
+        <Stack.Screen 
+          name="messages" 
+          options={{ 
+            headerShown: false
+          }} 
+        />
+        <Stack.Screen 
+          name="documents" 
+          options={{ 
+            headerShown: false
+          }} 
+        />
+        <Stack.Screen 
+          name="team" 
+          options={{ 
+            headerShown: false
+          }} 
+        />
+        <Stack.Screen 
+          name="profile" 
+          options={{ 
+            headerShown: false
+          }} 
+        />
+        <Stack.Screen 
+          name="add-task" 
+          options={{ 
+            headerShown: false
+          }} 
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

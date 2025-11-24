@@ -1,16 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function MoreScreen() {
+  const router = useRouter();
+
   const featureItems = [
+    {
+      icon: 'person-outline',
+      title: 'Profile',
+      subtitle: 'Your account info',
+      iconColor: '#2563EB',
+      iconBg: '#E0ECFF',
+      onPress: () => router.push('/profile'),
+    },
     {
       icon: 'chatbubble-ellipses-outline',
       title: 'Messages',
       subtitle: 'Team chat',
       iconColor: '#6366F1',
       iconBg: '#EEF2FF',
+      onPress: () => router.push('/messages'),
     },
     {
       icon: 'document-text-outline',
@@ -18,13 +30,7 @@ export default function MoreScreen() {
       subtitle: 'Files & docs',
       iconColor: '#2563EB',
       iconBg: '#EFF6FF',
-    },
-    {
-      icon: 'wallet-outline',
-      title: 'Budget',
-      subtitle: 'Track expenses',
-      iconColor: '#0EA5E9',
-      iconBg: '#E0F2FE',
+      onPress: () => router.push('/documents'),
     },
     {
       icon: 'people-outline',
@@ -32,6 +38,7 @@ export default function MoreScreen() {
       subtitle: 'Manage members',
       iconColor: '#2563EB',
       iconBg: '#E0ECFF',
+      onPress: () => router.push('/team'),
     },
   ];
 
@@ -53,7 +60,11 @@ export default function MoreScreen() {
   ];
 
   const renderItem = (item, isLast = false) => (
-    <Pressable key={item.title} style={[styles.listItem, isLast && styles.listItemLast]}>
+    <Pressable 
+      key={item.title} 
+      style={[styles.listItem, isLast && styles.listItemLast]}
+      onPress={item.onPress || undefined}
+    >
       <View style={styles.listItemLeft}>
         <View style={[styles.iconWrapper, { backgroundColor: item.iconBg }]}>
           <Ionicons name={item.icon} size={20} color={item.iconColor} />
