@@ -1,11 +1,36 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { logoutUser } from '@/store/authSlice';
 
 export default function MoreScreen() {
   const router = useRouter();
+  const dispatch = useDispatch();
+  const { isAuthenticated, userInfo } = useSelector((state) => state.auth);
+
+  const handleLogout = async () => {
+    try {
+      await dispatch(logoutUser()).unwrap();
+      // Navigate to login screen after logout
+      router.replace('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still navigate to login even if logout fails
+      router.replace('/login');
+    }
+  };
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [isAuthenticated, router]);
+
+  const isAdmin = userInfo?.role === 'admin';
 
   const featureItems = [
     {
@@ -16,6 +41,18 @@ export default function MoreScreen() {
       iconBg: '#E0ECFF',
       onPress: () => router.push('/profile'),
     },
+    ...(isAdmin
+      ? [
+          {
+            icon: 'people-outline',
+            title: 'User Management',
+            subtitle: 'Manage all users',
+            iconColor: '#DC2626',
+            iconBg: '#FEE2E2',
+            onPress: () => router.push('/admin-users'),
+          },
+        ]
+      : []),
     {
       icon: 'chatbubble-ellipses-outline',
       title: 'Messages',
@@ -85,11 +122,17 @@ export default function MoreScreen() {
           <View style={styles.profileTopRow}>
             <View style={styles.profileInfo}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>AU</Text>
+                <Text style={styles.avatarText}>
+                  {(userInfo?.fullName || userInfo?.username || 'U').substring(0, 2).toUpperCase()}
+                </Text>
               </View>
               <View>
-                <Text style={styles.profileName}>Admin User</Text>
-                <Text style={styles.profileRole}>Admin</Text>
+                <Text style={styles.profileName}>
+                  {userInfo?.fullName || userInfo?.username || 'User'}
+                </Text>
+                <Text style={styles.profileRole}>
+                  {userInfo?.role || 'Member'}
+                </Text>
               </View>
             </View>
             <View style={styles.actions}>
@@ -122,7 +165,7 @@ export default function MoreScreen() {
           </View>
         </View>
 
-        <Pressable style={styles.logoutButton}>
+        <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
           <Text style={styles.logoutText}>Log Out</Text>
         </Pressable>

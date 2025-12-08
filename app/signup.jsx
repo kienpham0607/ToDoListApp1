@@ -1,21 +1,90 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { registerUser, clearError } from '@/store/authSlice';
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const dispatch = useDispatch();
+  const { isLoading, error } = useSelector((state) => state.auth);
+  
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState('member'); // Default role
   const [showPassword, setShowPassword] = useState(false);
+  const [showRolePicker, setShowRolePicker] = useState(false);
+  
+  const roles = [
+    { value: 'member', label: 'Member' },
+    { value: 'manager', label: 'Manager' },
+    { value: 'admin', label: 'Admin' },
+  ];
 
-  const handleSignUp = () => {
-    if (username.trim() && password.trim()) {
-      // For demo purposes, redirect to main app
-      router.replace('/(tabs)/homepage');
-    } else {
+  // Show error alert
+  useEffect(() => {
+    if (error) {
+      alert(error);
+      dispatch(clearError());
+    }
+  }, [error, dispatch]);
+
+  // Email validation helper
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const handleSignUp = async () => {
+    // Clear any previous errors
+    dispatch(clearError());
+
+    // Validation
+    if (!username.trim() || !email.trim() || !password.trim() || !fullName.trim()) {
       alert('Please fill in all fields');
+      return;
+    }
+
+    // Email format validation
+    if (!isValidEmail(email.trim())) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
+    // Password length validation
+    if (password.length < 6) {
+      alert('Password must be at least 6 characters long');
+      return;
+    }
+
+    // Username validation
+    if (username.trim().length < 3) {
+      alert('Username must be at least 3 characters long');
+      return;
+    }
+
+    try {
+      console.log('Signup - Selected role:', role);
+      console.log('Signup - Role type:', typeof role);
+      
+      await dispatch(registerUser({
+        username: username.trim(),
+        email: email.trim(),
+        password,
+        fullName: fullName.trim(),
+        role: role, // Include role in registration
+      })).unwrap();
+      
+      alert('Registration successful! Please login.');
+      router.push('/login');
+    } catch (error) {
+      // Error is handled by useEffect watching error state
+      // But also show alert here as fallback
+      console.error('Signup catch error:', error);
     }
   };
 
@@ -38,7 +107,11 @@ export default function SignUpScreen() {
         </View>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.titleContainer}>
           <Text style={styles.title}>Create account</Text>
           <Text style={styles.subtitle}>Create your account and feel the benefits</Text>
@@ -55,6 +128,74 @@ export default function SignUpScreen() {
               autoCapitalize="none"
               placeholderTextColor="#A0A0A0"
             />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="name@example.com"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              placeholderTextColor="#A0A0A0"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Full Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your full name"
+              value={fullName}
+              onChangeText={setFullName}
+              placeholderTextColor="#A0A0A0"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Role</Text>
+            <Pressable 
+              style={styles.rolePicker}
+              onPress={() => setShowRolePicker(!showRolePicker)}
+            >
+              <Text style={styles.rolePickerText}>
+                {roles.find(r => r.value === role)?.label || 'Member'}
+              </Text>
+              <Ionicons 
+                name={showRolePicker ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color="#666" 
+              />
+            </Pressable>
+            {showRolePicker && (
+              <View style={styles.roleOptions}>
+                {roles.map((r) => (
+                  <Pressable
+                    key={r.value}
+                    style={[
+                      styles.roleOption,
+                      role === r.value && styles.roleOptionSelected
+                    ]}
+                    onPress={() => {
+                      setRole(r.value);
+                      setShowRolePicker(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.roleOptionText,
+                      role === r.value && styles.roleOptionTextSelected
+                    ]}>
+                      {r.label}
+                    </Text>
+                    {role === r.value && (
+                      <Ionicons name="checkmark" size={18} color="#029688" />
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
 
           <View style={styles.inputGroup}>
@@ -78,8 +219,16 @@ export default function SignUpScreen() {
             </View>
           </View>
 
-          <Pressable style={styles.signupButton} onPress={handleSignUp}>
-            <Text style={styles.signupButtonText}>Sign Up</Text>
+          <Pressable 
+            style={[styles.signupButton, isLoading && styles.signupButtonDisabled]} 
+            onPress={handleSignUp}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.signupButtonText}>Sign Up</Text>
+            )}
           </Pressable>
 
           <View style={styles.loginContainer}>
@@ -89,7 +238,7 @@ export default function SignUpScreen() {
             </Pressable>
           </View>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -116,10 +265,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 4,
   },
-  content: {
+  scrollView: {
     flex: 1,
+  },
+  content: {
     paddingHorizontal: 20,
-    justifyContent: 'center',
+    paddingVertical: 20,
   },
   titleContainer: {
     marginBottom: 40,
@@ -197,5 +348,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#029688',
     fontWeight: '500',
+  },
+  signupButtonDisabled: {
+    opacity: 0.6,
+  },
+  rolePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#E4E6EB',
+  },
+  rolePickerText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  roleOptions: {
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E4E6EB',
+    overflow: 'hidden',
+  },
+  roleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  roleOptionSelected: {
+    backgroundColor: '#F0FDF4',
+  },
+  roleOptionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  roleOptionTextSelected: {
+    color: '#029688',
+    fontWeight: '600',
   },
 });

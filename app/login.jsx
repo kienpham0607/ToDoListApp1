@@ -1,51 +1,141 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { loginUser, saveCredentials, clearCredentials, clearError, loadToken } from '@/store/authSlice';
+
+const CREDENTIAL_KEY = 'todyapp_credentials_v1';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const dispatch = useDispatch();
+  const { isLoading, error, isAuthenticated } = useSelector((state) => state.auth);
+  
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
-  // Keys for secure storage
-  const CREDENTIAL_KEY = 'todyapp_credentials_v1';
-
   const loadSavedCredentials = async () => {
     try {
+      console.log('Loading saved credentials...');
       const json = await SecureStore.getItemAsync(CREDENTIAL_KEY);
+      console.log('Loaded credentials from storage:', json ? 'Found' : 'Not found');
       if (json) {
         const creds = JSON.parse(json);
-        if (creds?.email && creds?.password) {
-          setEmail(creds.email);
+        console.log('Parsed credentials:', { username: creds?.username, hasPassword: !!creds?.password });
+        if (creds?.username && creds?.password) {
+          // Use setTimeout to ensure state updates properly
+          setTimeout(() => {
+          setUsername(creds.username);
           setPassword(creds.password);
           setRememberMe(true);
+            console.log('Credentials loaded and set:', { username: creds.username, rememberMe: true });
+          }, 100);
+        } else {
+          console.log('Credentials found but missing username or password');
         }
+      } else {
+        console.log('No saved credentials found');
       }
-    } catch {}
+    } catch (error) {
+      console.error('Error loading saved credentials:', error);
+    }
   };
 
   useEffect(() => {
     loadSavedCredentials();
-  }, []);
+    // Load token if exists
+    dispatch(loadToken());
+  }, [dispatch]);
+
+  // Reload credentials when screen comes into focus (user navigates back to login)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Login screen focused, reloading credentials...');
+      loadSavedCredentials();
+    }, [])
+  );
+
+  // Navigate to homepage if authenticated (after successful login)
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      // Small delay to ensure state is updated
+      const timer = setTimeout(() => {
+        router.replace('/(tabs)/homepage');
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Show error alert
+  useEffect(() => {
+    if (error && !isLoading) {
+      console.log('Showing error:', error);
+      alert(error);
+      dispatch(clearError());
+    }
+  }, [error, isLoading, dispatch]);
 
   const handleLogin = async () => {
-    // Demo credentials
-    if (email === 'admin@gmail.com' && password === '12345') {
-      try {
-        if (rememberMe) {
-          await SecureStore.setItemAsync(CREDENTIAL_KEY, JSON.stringify({ email, password }));
-        } else {
-          await SecureStore.deleteItemAsync(CREDENTIAL_KEY);
+    if (!username.trim() || !password.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    // Clear any previous errors
+    dispatch(clearError());
+
+    try {
+      console.log('Starting login for:', username.trim());
+      const result = await dispatch(loginUser({ 
+        username: username.trim(), 
+        password 
+      })).unwrap();
+      
+      console.log('Login successful:', result);
+      
+      // Save or clear credentials based on remember me checkbox
+      if (rememberMe) {
+        console.log('Saving credentials for remember me:', { username: username.trim(), hasPassword: !!password });
+        try {
+          // Save directly to SecureStore to ensure it works
+          await SecureStore.setItemAsync(CREDENTIAL_KEY, JSON.stringify({ 
+            username: username.trim(), 
+            password 
+          }));
+          console.log('Credentials saved successfully to SecureStore');
+          // Also dispatch to Redux for consistency
+          dispatch(saveCredentials({ 
+            username: username.trim(), 
+            password 
+          }));
+        } catch (saveError) {
+          console.error('Error saving credentials:', saveError);
         }
-      } catch {}
-      router.replace('/(tabs)/homepage');
-    } else {
-      alert('Invalid credentials. Use admin@gmail.com / 12345');
+      } else {
+        console.log('Clearing credentials (remember me not checked)');
+        try {
+          await SecureStore.deleteItemAsync(CREDENTIAL_KEY);
+          console.log('Credentials cleared successfully from SecureStore');
+          // Also dispatch to Redux for consistency
+        dispatch(clearCredentials());
+        } catch (clearError) {
+          console.error('Error clearing credentials:', clearError);
+        }
+      }
+      
+      // Navigation will happen automatically via useEffect when isAuthenticated changes
+    } catch (error) {
+      console.error('Login catch error:', error);
+      // Error is already set in Redux state and will be shown by useEffect
+      // But also show alert here as fallback
+      if (error) {
+        alert(error || 'Login failed. Please check your credentials.');
+      }
     }
   };
 
@@ -53,15 +143,17 @@ export default function LoginScreen() {
     router.push('/signup');
   };
 
+  const handleBack = () => {
+    router.push('/(tabs)/homepage');
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Text style={styles.time}>9:41</Text>
-        <View style={styles.statusIcons}>
-          <Ionicons name="cellular" size={16} color="#000" />
-          <Ionicons name="wifi" size={16} color="#000" />
-          <Ionicons name="battery-full" size={16} color="#000" />
-        </View>
+      {/* Back Button */}
+      <View style={styles.backButtonContainer}>
+        <Pressable style={styles.backButton} onPress={handleBack}>
+          <Ionicons name="arrow-back" size={24} color="#333" />
+        </Pressable>
       </View>
 
       <View style={styles.content}>
@@ -72,13 +164,12 @@ export default function LoginScreen() {
 
         <View style={styles.formContainer}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email Address</Text>
+            <Text style={styles.label}>Username</Text>
             <TextInput
               style={styles.input}
-              placeholder="name@example.com"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
+              placeholder="Enter your username"
+              value={username}
+              onChangeText={setUsername}
               autoCapitalize="none"
               placeholderTextColor="#A0A0A0"
             />
@@ -117,8 +208,16 @@ export default function LoginScreen() {
             <View />
           </View>
 
-          <Pressable style={styles.loginButton} onPress={handleLogin}>
-            <Text style={styles.loginButtonText}>Next</Text>
+          <Pressable 
+            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]} 
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginButtonText}>Next</Text>
+            )}
           </Pressable>
 
           <View style={styles.signupContainer}>
@@ -138,22 +237,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  backButtonContainer: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 20,
   },
-  time: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-  },
-  statusIcons: {
-    flexDirection: 'row',
-    gap: 4,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
@@ -267,5 +362,8 @@ const styles = StyleSheet.create({
   rememberText: {
     fontSize: 14,
     color: '#333',
+  },
+  loginButtonDisabled: {
+    opacity: 0.6,
   },
 });

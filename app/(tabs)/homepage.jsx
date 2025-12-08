@@ -1,16 +1,38 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { useDispatch, useSelector } from 'react-redux';
+import { logoutUser } from '@/store/authSlice';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const dispatch = useDispatch();
+  const { isAuthenticated, userInfo } = useSelector((state) => state.auth);
 
-  const handleLogout = () => {
-    router.replace('/login');
+  const handleLogin = () => {
+    router.push('/login');
   };
+
+  const handleLogout = async () => {
+    try {
+      await dispatch(logoutUser()).unwrap();
+      // Navigate to login screen after logout
+      router.replace('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still navigate to login even if logout fails
+      router.replace('/login');
+    }
+  };
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [isAuthenticated, router]);
 
   const inProgressTasks = [
     { id: '1', title: 'Office Project', description: 'Grocery shopping app design', progress: 75, color: '#2196F3', icon: 'briefcase' },
@@ -26,6 +48,21 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header with Login Button - Only show if not authenticated */}
+      {!isAuthenticated && (
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.headerTitle}>Home</Text>
+            </View>
+            <Pressable style={styles.loginButton} onPress={handleLogin}>
+              <Ionicons name="log-in-outline" size={18} color="#029688" />
+              <Text style={styles.loginButtonText}>Đăng nhập</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* User Greeting Section */}
         <View style={styles.userSection}>
@@ -36,12 +73,16 @@ export default function HomeScreen() {
               </View>
             </View>
             <View style={styles.userText}>
-              <Text style={styles.greeting}>Hello!</Text>
-              <Text style={styles.userName}>Livia Vaccaro</Text>
+              <Text style={styles.greeting}>
+                Hello {userInfo?.fullName || userInfo?.username || 'User'}!
+              </Text>
             </View>
-            <Pressable style={styles.logoutButton} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={20} color="#666" />
-            </Pressable>
+            {/* Logout button - Only show when authenticated */}
+            {isAuthenticated && (
+              <Pressable style={styles.logoutButton} onPress={handleLogout}>
+                <Ionicons name="log-out-outline" size={20} color="#666" />
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -72,6 +113,7 @@ export default function HomeScreen() {
             <View style={styles.sectionBadge}>
               <Text style={styles.sectionBadgeText}>6</Text>
             </View>
+
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
             {inProgressTasks.map((task) => (
@@ -96,6 +138,7 @@ export default function HomeScreen() {
             <View style={styles.sectionBadge}>
               <Text style={styles.sectionBadgeText}>4</Text>
             </View>
+
           </View>
           {taskGroups.map((group) => (
             <View key={group.id} style={styles.groupCard}>
@@ -163,11 +206,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greeting: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 2,
-  },
-  userName: {
     fontSize: 20,
     fontWeight: '700',
     color: '#333',
@@ -365,9 +403,49 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
   },
+  // Header
+  header: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#333',
+  },
+  loginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#029688',
+  },
+  loginButtonText: {
+    color: '#029688',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   logoutButton: {
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#f5f5f5',
   },
 });
+
+

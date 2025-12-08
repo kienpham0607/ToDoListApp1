@@ -1,42 +1,112 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { updateUserProfile, refreshUserInfo, changePassword } from '@/store/authSlice';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const dispatch = useDispatch();
+  const { token, userInfo, isAuthenticated, isLoading: authLoading } = useSelector((state) => state.auth);
+  
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // User data - in real app, this would come from context/state management
+  // Initialize user data from Redux
   const [userData, setUserData] = useState({
-    name: 'Admin User',
-    email: 'admin@example.com',
-    role: 'Admin',
-    initials: 'AU',
+    name: userInfo?.fullName || userInfo?.username || 'User',
+    email: userInfo?.email || '',
+    role: userInfo?.role || 'Member',
+    initials: (userInfo?.fullName || userInfo?.username || 'U').substring(0, 2).toUpperCase(),
     avatarColor: '#2563EB',
-    phone: '+1 (555) 123-4567',
-    joinDate: 'January 2024',
-    projects: ['Website Redesign', 'Mobile App Development', 'Marketing Campaign Q2'],
+    phone: '', // Backend doesn't have phone field
+    joinDate: userInfo?.createdAt ? new Date(userInfo.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '',
+    projects: [], // Will be loaded separately if needed
   });
+
+  // Redirect to login if not authenticated
+  // Only redirect if we're sure user is not authenticated (not during loading/updating)
+  useEffect(() => {
+    if (!isAuthenticated && !isUpdating && !authLoading) {
+      // Small delay to avoid redirecting during state updates
+      const timer = setTimeout(() => {
+        router.replace('/login');
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, router, isUpdating, authLoading]);
+
+  // Load user info when component mounts if we have token but missing user info
+  useEffect(() => {
+    if (token) {
+      if (userInfo?.id) {
+        // If we have id but missing some fields, refresh it
+        if (!userInfo.email || !userInfo.fullName) {
+          dispatch(refreshUserInfo(userInfo.id));
+        }
+      } else if (userInfo?.username) {
+        // If we only have username, try to get full info via getUserByUsername
+        // This is handled in authSlice during login, but just in case
+        console.log('User info missing id, but has username:', userInfo.username);
+      }
+    }
+  }, [token, dispatch, userInfo]);
+
+  // Update userData when userInfo changes
+  useEffect(() => {
+    if (userInfo) {
+      // Format createdAt date
+      let joinDate = '';
+      if (userInfo.createdAt) {
+        try {
+          // Handle both ISO string and date object
+          const date = typeof userInfo.createdAt === 'string' 
+            ? new Date(userInfo.createdAt) 
+            : new Date(userInfo.createdAt);
+          if (!isNaN(date.getTime())) {
+            joinDate = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+          }
+        } catch (e) {
+          console.error('Error parsing date:', e);
+        }
+      }
+
+      setUserData({
+        name: userInfo.fullName || userInfo.username || 'User',
+        email: userInfo.email || '',
+        role: userInfo.role || 'Member',
+        initials: (userInfo.fullName || userInfo.username || 'U').substring(0, 2).toUpperCase(),
+        avatarColor: '#2563EB',
+        phone: '', // Backend doesn't have phone field
+        joinDate,
+        projects: [],
+      });
+    }
+  }, [userInfo]);
 
   // Edit form states
   const [editName, setEditName] = useState(userData.name);
   const [editEmail, setEditEmail] = useState(userData.email);
-  const [editPhone, setEditPhone] = useState(userData.phone);
+
+  // Update edit form when userData changes
+  useEffect(() => {
+    setEditName(userData.name);
+    setEditEmail(userData.email);
+  }, [userData]);
 
   const handleOpenEditModal = () => {
     setEditName(userData.name);
     setEditEmail(userData.email);
-    setEditPhone(userData.phone);
     setShowEditProfileModal(true);
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!editName.trim() || !editEmail.trim()) {
       Alert.alert('Error', 'Please fill in name and email');
       return;
@@ -49,27 +119,51 @@ export default function ProfileScreen() {
       return;
     }
 
-    // Update user data
-    const newInitials = editName
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+    if (!token || !userInfo?.id) {
+      Alert.alert('Error', 'User information not available. Please login again.');
+      return;
+    }
 
-    setUserData({
-      ...userData,
-      name: editName.trim(),
-      email: editEmail.trim(),
-      phone: editPhone.trim(),
-      initials: newInitials,
-    });
+    setIsUpdating(true);
+    try {
+      // Only send fields that are being changed
+      const updateData = {};
+      
+      if (editName.trim() !== (userInfo.fullName || userInfo.username)) {
+        updateData.fullName = editName.trim();
+      }
+      
+      if (editEmail.trim() !== userInfo.email) {
+        updateData.email = editEmail.trim();
+      }
 
-    Alert.alert('Success', 'Profile updated successfully');
-    setShowEditProfileModal(false);
+      // Only dispatch if there are changes
+      if (Object.keys(updateData).length > 0) {
+        // Note: userId is not needed anymore - backend gets it from JWT token
+        await dispatch(updateUserProfile({
+          userId: userInfo.id, // Still pass for backward compatibility, but backend doesn't use it
+          updateData,
+        })).unwrap();
+      } else {
+        Alert.alert('Info', 'No changes detected');
+        setShowEditProfileModal(false);
+        return;
+      }
+
+      // Refresh user info to get latest data
+      await dispatch(refreshUserInfo(userInfo.id));
+
+      Alert.alert('Success', 'Profile updated successfully');
+      setShowEditProfileModal(false);
+    } catch (error) {
+      console.error('Update profile error:', error);
+      Alert.alert('Error', error || 'Failed to update profile. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -85,12 +179,34 @@ export default function ProfileScreen() {
       return;
     }
 
-    // Handle password change logic here
-    Alert.alert('Success', 'Password changed successfully');
-    setShowChangePasswordModal(false);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    if (!userInfo?.id) {
+      Alert.alert('Error', 'User information not available. Please login again.');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      // Use changePassword thunk from Redux
+      await dispatch(changePassword({
+        userId: userInfo.id,
+        currentPassword,
+        newPassword,
+      })).unwrap();
+
+      // Refresh user info after password change
+      await dispatch(refreshUserInfo(userInfo.id));
+
+      Alert.alert('Success', 'Password changed successfully');
+      setShowChangePasswordModal(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      console.error('Change password error:', error);
+      Alert.alert('Error', error || 'Failed to change password. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const profileMenuItems = [
@@ -163,13 +279,15 @@ export default function ProfileScreen() {
                 <Text style={styles.infoValue}>{userData.email}</Text>
               </View>
             </View>
-            <View style={styles.infoRow}>
-              <Ionicons name="call-outline" size={20} color="#6B7280" />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>{userData.phone}</Text>
+            {userData.phone ? (
+              <View style={styles.infoRow}>
+                <Ionicons name="call-outline" size={20} color="#6B7280" />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Phone</Text>
+                  <Text style={styles.infoValue}>{userData.phone}</Text>
+                </View>
               </View>
-            </View>
+            ) : null}
             <View style={styles.infoRow}>
               <Ionicons name="calendar-outline" size={20} color="#6B7280" />
               <View style={styles.infoContent}>
@@ -277,8 +395,16 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <Pressable style={styles.modalButton} onPress={handleChangePassword}>
-              <Text style={styles.modalButtonText}>Update Password</Text>
+            <Pressable 
+              style={[styles.modalButton, isUpdating && styles.modalButtonDisabled]} 
+              onPress={handleChangePassword}
+              disabled={isUpdating}
+            >
+              {isUpdating ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalButtonText}>Update Password</Text>
+              )}
             </Pressable>
           </Pressable>
         </Pressable>
@@ -330,27 +456,26 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Phone Number</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter your phone number"
-                placeholderTextColor="#9CA3AF"
-                value={editPhone}
-                onChangeText={setEditPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
+            {/* Phone field removed - backend doesn't support it */}
 
             <View style={styles.modalButtonRow}>
               <Pressable 
                 style={[styles.modalButton, styles.modalButtonCancel]} 
                 onPress={() => setShowEditProfileModal(false)}
+                disabled={isUpdating}
               >
                 <Text style={styles.modalButtonTextCancel}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.modalButton} onPress={handleSaveProfile}>
-                <Text style={styles.modalButtonText}>Save Changes</Text>
+              <Pressable 
+                style={[styles.modalButton, isUpdating && styles.modalButtonDisabled]} 
+                onPress={handleSaveProfile}
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Save Changes</Text>
+                )}
               </Pressable>
             </View>
           </Pressable>
@@ -649,6 +774,9 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalButtonDisabled: {
+    opacity: 0.6,
   },
 });
 
