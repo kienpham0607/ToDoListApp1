@@ -1,14 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { 
+  fetchTasks, 
+  setSelectedDate,
+  selectCalendarTasks,
+  selectSelectedDate,
+  selectTasksLoading,
+  selectTasksError,
+  selectTasks,
+} from '@/store/taskSlice';
+import { selectToken, selectIsAuthenticated } from '@/store/authSlice';
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const dispatch = useDispatch();
   const [selectedTab, setSelectedTab] = useState('To do');
 
-  const today = new Date();
+  const token = useSelector(selectToken);
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const calendarTasks = useSelector(selectCalendarTasks);
+  const selectedDate = useSelector(selectSelectedDate);
+  const allTasks = useSelector(selectTasks);
+  const loading = useSelector(selectTasksLoading);
+  const error = useSelector(selectTasksError);
+
+  const today = useMemo(() => new Date(), []);
   const year = today.getFullYear();
   const month = today.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -17,12 +37,64 @@ export default function CalendarScreen() {
   const days = useMemo(() => {
     return Array.from({ length: daysInMonth }, (_, i) => {
       const date = new Date(year, month, i + 1);
-      return { d: i + 1, label: weekday[date.getDay()] };
+      return { d: i + 1, label: weekday[date.getDay()], date };
     });
   }, [daysInMonth, month, year, weekday]);
 
   const [selectedIndex, setSelectedIndex] = useState(today.getDate() - 1);
   const dateScrollRef = useRef(null);
+
+  // Format date to YYYY-MM-DD
+  const formatDate = useMemo(() => {
+    return (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+  }, []);
+
+  // Get selected date as Date object
+  const selectedDateObj = useMemo(() => {
+    return days[selectedIndex]?.date || today;
+  }, [selectedIndex, days, today]);
+
+  // Set initial selected date when component mounts (must run before fetchTasks)
+  useEffect(() => {
+    if (isAuthenticated && token && selectedDateObj) {
+      const dateStr = formatDate(selectedDateObj);
+      console.log('Calendar: Setting initial selected date:', dateStr, 'from selectedDateObj:', selectedDateObj);
+      dispatch(setSelectedDate(dateStr));
+    }
+  }, [isAuthenticated, token, selectedDateObj, dispatch, formatDate]);
+
+  // Fetch tasks when component mounts or when authenticated
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      console.log('Calendar: Fetching tasks...');
+      dispatch(fetchTasks({ token, offset: 0, limit: 1000 }));
+    }
+  }, [isAuthenticated, token, dispatch]);
+
+  // Refresh tasks when screen comes into focus (e.g., after creating a task)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated && token) {
+        console.log('Calendar: Screen focused, refreshing tasks...');
+        dispatch(fetchTasks({ token, offset: 0, limit: 1000 }));
+      }
+    }, [isAuthenticated, token, dispatch])
+  );
+
+  // Update calendar tasks when date changes
+  useEffect(() => {
+    if (isAuthenticated && token && selectedDateObj) {
+      const dateStr = formatDate(selectedDateObj);
+      console.log('Calendar: Date changed, setting selected date:', dateStr);
+      console.log('Calendar: Total tasks available:', allTasks.length);
+      dispatch(setSelectedDate(dateStr));
+    }
+  }, [selectedIndex, selectedDateObj, isAuthenticated, token, dispatch, formatDate, allTasks.length]);
 
   useEffect(() => {
     // Auto-scroll to bring today's pill into view
@@ -35,14 +107,72 @@ export default function CalendarScreen() {
     }
   }, [selectedIndex]);
 
-  const tasks = [
-    { id: '1', title: 'Market Research', project: 'Grocery shopping app design', time: '10:00 AM', status: 'Done', color: '#90CAF9' },
-    { id: '2', title: 'Competitive Analysis', project: 'Grocery shopping app design', time: '12:00 PM', status: 'In Progress', color: '#FFE082' },
-    { id: '3', title: 'Create Low-fidelity Wireframe', project: 'Uber Eats redesign challenge', time: '07:00 PM', status: 'To-do', color: '#B39DDB' },
-    { id: '4', title: 'How to pitch a Design Sprint', project: 'About design sprint', time: '09:00 PM', status: 'To-do', color: '#A5D6A7' },
-  ];
+  // Map task status from backend to UI
+  const mapStatus = (status) => {
+    if (!status) return 'To-do';
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'done' || statusLower === 'completed') return 'Completed';
+    if (statusLower === 'in_progress' || statusLower === 'inprogress') return 'In Progress';
+    return 'To-do';
+  };
 
-  const filteredTasks = tasks.filter(t => selectedTab === 'All' ? true : (selectedTab === 'To do' ? t.status === 'To-do' : t.status === selectedTab));
+  // Map priority to color
+  const getPriorityColor = (priority) => {
+    if (!priority) return '#B39DDB'; // Default purple
+    const priorityLower = priority.toLowerCase();
+    if (priorityLower === 'high') return '#EF5350'; // Red
+    if (priorityLower === 'medium') return '#FFA726'; // Orange
+    if (priorityLower === 'low') return '#66BB6A'; // Green
+    return '#B39DDB'; // Default purple
+  };
+
+  // Format time from dueDate (if it includes time) or use default
+  const formatTaskTime = (dueDate) => {
+    if (!dueDate) return 'No time';
+    try {
+      // If dueDate includes time (ISO format with time)
+      if (dueDate.includes('T')) {
+        const date = new Date(dueDate);
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        return `${String(displayHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
+      }
+      return 'All day';
+    } catch {
+      return 'All day';
+    }
+  };
+
+  // Transform API tasks to UI format
+  const transformedTasks = useMemo(() => {
+    console.log('Calendar: Transforming tasks, calendarTasks count:', calendarTasks.length);
+    console.log('Calendar: Selected date:', selectedDate);
+    const transformed = calendarTasks.map(task => {
+      console.log('Calendar: Task:', task.name, 'dueDate:', task.dueDate);
+      return {
+        id: String(task.id),
+        title: task.name || 'Untitled Task',
+        project: task.project?.name || task.projectName || 'Personal Task',
+        time: formatTaskTime(task.dueDate),
+        status: mapStatus(task.status),
+        color: getPriorityColor(task.priority),
+        progress: task.progress || 0,
+      };
+    });
+    console.log('Calendar: Transformed tasks count:', transformed.length);
+    return transformed;
+  }, [calendarTasks, selectedDate]);
+
+  // Filter tasks by selected tab
+  const filteredTasks = useMemo(() => {
+    if (selectedTab === 'All') return transformedTasks;
+    if (selectedTab === 'To do') return transformedTasks.filter(t => t.status === 'To-do');
+    if (selectedTab === 'In Progress') return transformedTasks.filter(t => t.status === 'In Progress');
+    if (selectedTab === 'Completed') return transformedTasks.filter(t => t.status === 'Completed');
+    return transformedTasks;
+  }, [transformedTasks, selectedTab]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -83,32 +213,61 @@ export default function CalendarScreen() {
 
         {/* Tasks list */}
         <View style={styles.listSection}>
-          {filteredTasks.map(task => (
-            <View key={task.id} style={styles.taskCard}>
-              <View style={[styles.taskAccent, { backgroundColor: task.color }]} />
-              <View style={styles.taskContent}>
-                <Text style={styles.taskProject}>{task.project}</Text>
-                <Text style={styles.taskTitle}>{task.title}</Text>
-                <View style={styles.metaRow}>
-                  <View style={styles.timeRow}>
-                    <Ionicons name="time" size={14} color="#64B5F6" />
-                    <Text style={styles.timeText}>{task.time}</Text>
-                  </View>
-                  <View style={[styles.statusBadge, task.status === 'Done' ? styles.badgeDone : task.status === 'In Progress' ? styles.badgeInProgress : styles.badgeTodo]}>
-                    <Text style={[styles.badgeText, task.status === 'In Progress' && { color: '#FB8C00' }]}>{task.status}</Text>
+          {loading && calendarTasks.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#9C27B0" />
+              <Text style={styles.loadingText}>Đang tải tasks...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>
+                {typeof error === 'object' ? error.message : error}
+              </Text>
+            </View>
+          ) : filteredTasks.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="calendar-outline" size={48} color="#BDBDBD" />
+              <Text style={styles.emptyText}>Không có tasks nào cho ngày này</Text>
+            </View>
+          ) : (
+            filteredTasks.map(task => (
+              <View key={task.id} style={styles.taskCard}>
+                <View style={[styles.taskAccent, { backgroundColor: task.color }]} />
+                <View style={styles.taskContent}>
+                  <Text style={styles.taskProject}>{task.project}</Text>
+                  <Text style={styles.taskTitle}>{task.title}</Text>
+                  <View style={styles.metaRow}>
+                    <View style={styles.timeRow}>
+                      <Ionicons name="time" size={14} color="#64B5F6" />
+                      <Text style={styles.timeText}>{task.time}</Text>
+                    </View>
+                    <View style={[
+                      styles.statusBadge, 
+                      task.status === 'Completed' ? styles.badgeDone : 
+                      task.status === 'In Progress' ? styles.badgeInProgress : 
+                      styles.badgeTodo
+                    ]}>
+                      <Text style={[
+                        styles.badgeText, 
+                        task.status === 'In Progress' && { color: '#FB8C00' },
+                        task.status === 'Completed' && { color: '#4CAF50' }
+                      ]}>
+                        {task.status}
+                      </Text>
+                    </View>
                   </View>
                 </View>
+                <View style={styles.cardAction}>
+                  <Ionicons name="bookmark-outline" size={18} color="#BDBDBD" />
+                </View>
               </View>
-              <View style={styles.cardAction}>
-                <Ionicons name="bookmark-outline" size={18} color="#BDBDBD" />
-              </View>
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </ScrollView>
 
       {/* Floating add button */}
-      <Pressable style={styles.fab} onPress={() => router.push('/(tabs)/inbox')}>
+      <Pressable style={styles.fab} onPress={() => router.push('/(tabs)/my-tasks')}>
         <Ionicons name="add" size={26} color="#fff" />
       </Pressable>
     </SafeAreaView>
@@ -286,5 +445,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
+  },
+  errorContainer: {
+    padding: 20,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 12,
+    marginVertical: 12,
+  },
+  errorText: {
+    color: '#C62828',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  emptyContainer: {
+    padding: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#9AA3AE',
+    textAlign: 'center',
   },
 });

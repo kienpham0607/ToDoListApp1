@@ -16,11 +16,17 @@
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
 import userManagementReducer from './userManagementSlice';
+import taskReducer from './taskSlice';
+import teamReducer from './teamSlice';
+import projectReducer from './projectSlice';
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
     userManagement: userManagementReducer,
+    tasks: taskReducer,
+    team: teamReducer,
+    project: projectReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

@@ -1,11 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import Toast from 'react-native-toast-message';
+import { 
+  fetchProjects, 
+  createNewProject,
+  deleteProjectById,
+  selectProjects,
+  selectProjectLoading,
+  selectProjectError,
+  clearError
+} from '@/store/projectSlice';
+import { selectToken, selectIsAuthenticated } from '@/store/authSlice';
 
 export default function ProjectsScreen() {
   const router = useRouter();
+  const dispatch = useDispatch();
+  const token = useSelector(selectToken);
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  const projects = useSelector(selectProjects);
+  const loading = useSelector(selectProjectLoading);
+  const error = useSelector(selectProjectError);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -13,83 +32,47 @@ export default function ProjectsScreen() {
   // Form states
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState('Planning');
-  const [budget, setBudget] = useState('0');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [projectManager, setProjectManager] = useState('');
-  const [selectedTeamMembers, setSelectedTeamMembers] = useState([]);
 
-  const [projects, setProjects] = useState([
-    {
-      id: '1',
-      title: 'Website Redesign',
-      description: 'Complete redesign of company website',
-      status: 'Active',
-      manager: 'Project Manager',
-      date: '6/30/2024',
-      budget: '50000',
-      startDate: '1/15/2024',
-      endDate: '6/30/2024',
-      teamMembers: ['1', '2'],
-    },
-    {
-      id: '2',
-      title: 'Mobile App Development',
-      description: 'Build iOS and Android mobile application',
-      status: 'Planning',
-      manager: 'Project Manager',
-      date: '12/31/2024',
-      budget: '100000',
-      startDate: '3/1/2024',
-      endDate: '12/31/2024',
-      teamMembers: ['2', '3'],
-    },
-    {
-      id: '3',
-      title: 'Marketing Campaign Q2',
-      description: 'Q2 marketing initiatives and campaigns',
-      status: 'Active',
-      manager: 'Project Manager',
-      date: '6/30/2024',
-      budget: '25000',
-      startDate: '4/1/2024',
-      endDate: '6/30/2024',
-      teamMembers: ['1'],
-    },
-  ]);
+  // Fetch data when component mounts or when authenticated
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      console.log('Projects: Fetching initial data...');
+      dispatch(fetchProjects({ token, offset: 0, limit: 1000 }));
+    }
+  }, [isAuthenticated, token, dispatch]);
 
-  const teamMembers = [
-    { id: '1', name: 'Admin User', email: 'admin@example.com', initials: 'AU' },
-    { id: '2', name: 'Project Manager', email: 'manager@example.com', initials: 'PM' },
-    { id: '3', name: 'Team Member', email: 'member@example.com', initials: 'TM' },
-  ];
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated && token) {
+        console.log('Projects: Screen focused, refreshing data...');
+        dispatch(fetchProjects({ token, offset: 0, limit: 1000 }));
+      }
+    }, [isAuthenticated, token, dispatch])
+  );
 
-  const projectManagers = [
-    'Project Manager',
-    'Admin User',
-    'Team Lead',
-  ];
-
-  const statusOptions = ['Planning', 'Active', 'On Hold', 'Completed'];
-
-  const toggleTeamMember = (memberId) => {
-    setSelectedTeamMembers(prev => 
-      prev.includes(memberId) 
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
-    );
-  };
+  // Show error toast if there's an error
+  useEffect(() => {
+    if (error) {
+      Toast.show({
+        type: 'error',
+        text1: error.message || 'Error',
+        text2: 'Vui lòng thử lại sau',
+        position: 'top',
+        visibilityTime: 4000,
+        topOffset: 60,
+      });
+      dispatch(clearError());
+    }
+  }, [error, dispatch]);
 
   const resetForm = () => {
     setProjectName('');
     setDescription('');
-    setStatus('Planning');
-    setBudget('0');
     setStartDate('');
     setEndDate('');
-    setProjectManager('');
-    setSelectedTeamMembers([]);
   };
 
   const handleCloseModal = () => {
@@ -97,27 +80,59 @@ export default function ProjectsScreen() {
     setShowCreateModal(false);
   };
 
-  const formatDate = (dateString) => {
+  const formatDateForDisplay = (dateString) => {
     if (!dateString) return '';
-    // If already in format m/d/yyyy, return as is
-    if (dateString.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+    } catch {
       return dateString;
     }
-    // Try to parse and format
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return dateString;
-    return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
   };
 
-  const handleCreateProject = () => {
+  const formatDateForAPI = (dateString) => {
+    if (!dateString) return null;
+    // If already in YYYY-MM-DD format, return as is
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return dateString;
+    }
+    // Try to parse and convert to YYYY-MM-DD
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return null;
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleCreateProject = async () => {
     // Validation
     if (!projectName.trim()) {
-      Alert.alert('Validation Error', 'Please enter a project name.');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter a project name',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
       return;
     }
 
-    if (!projectManager) {
-      Alert.alert('Validation Error', 'Please select a project manager.');
+    if (!token) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'You must be logged in to create a project',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
       return;
     }
 
@@ -126,131 +141,198 @@ export default function ProjectsScreen() {
       const start = new Date(startDate);
       const end = new Date(endDate);
       if (end < start) {
-        Alert.alert('Validation Error', 'End date must be after start date.');
+        Toast.show({
+          type: 'error',
+          text1: 'Validation Error',
+          text2: 'End date must be after start date',
+          position: 'top',
+          visibilityTime: 3000,
+          topOffset: 60,
+        });
         return;
       }
     }
 
-    // Get selected team member names
-    const selectedMembers = teamMembers
-      .filter(member => selectedTeamMembers.includes(member.id))
-      .map(member => member.name);
+    try {
+      const projectData = {
+        name: projectName.trim(),
+        description: description.trim() || null,
+        startDate: formatDateForAPI(startDate),
+        endDate: formatDateForAPI(endDate),
+      };
 
-    const newProject = {
-      id: String(Date.now()),
-      title: projectName.trim(),
-      description: description.trim() || '',
-      status: status,
-      manager: projectManager,
-      date: formatDate(endDate) || formatDate(startDate) || new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-      budget: budget || '0',
-      startDate: formatDate(startDate) || '',
-      endDate: formatDate(endDate) || '',
-      teamMembers: selectedTeamMembers,
-      teamMemberNames: selectedMembers,
-    };
+      await dispatch(createNewProject({
+        token,
+        projectData,
+      })).unwrap();
 
-    setProjects([newProject, ...projects]);
-    
-    // Show success message
-    Alert.alert('Success', 'Project created successfully!', [
-      {
-        text: 'OK',
-        onPress: () => {
-          resetForm();
-          setShowCreateModal(false);
-        }
-      }
-    ]);
+      resetForm();
+      setShowCreateModal(false);
+
+      // Refresh projects list
+      await dispatch(fetchProjects({ token, offset: 0, limit: 1000 }));
+
+      Toast.show({
+        type: 'success',
+        text1: 'Project Created',
+        text2: `"${projectName.trim()}" has been created successfully`,
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      // Error will be handled by useEffect watching error
+    }
   };
 
-  const filteredProjects = projects.filter((project) => {
-    const matchesSearch = project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         project.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'All Status' || project.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Filter and map projects for display
+  const filteredProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    
+    return projects.map(project => {
+      // Compute status based on dates
+      let computedStatus = 'Active';
+      const now = new Date();
+      if (project.endDate) {
+        const endDate = new Date(project.endDate);
+        if (endDate < now) {
+          computedStatus = 'Completed';
+        } else if (project.startDate) {
+          const startDate = new Date(project.startDate);
+          if (startDate > now) {
+            computedStatus = 'Planning';
+          }
+        }
+      } else if (project.startDate) {
+        const startDate = new Date(project.startDate);
+        if (startDate > now) {
+          computedStatus = 'Planning';
+        }
+      }
+      
+      return {
+        ...project,
+        title: project.name,
+        date: formatDateForDisplay(project.endDate) || formatDateForDisplay(project.startDate) || '',
+        status: computedStatus,
+      };
+    }).filter((project) => {
+      const matchesSearch = !searchQuery || 
+        project.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        project.description?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'All Status' || project.status === statusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [projects, searchQuery, statusFilter]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.title}>Projects</Text>
-            <Text style={styles.subtitle}>Manage and track all your projects</Text>
-          </View>
-          <Pressable 
-            style={styles.newProjectButton}
-            onPress={() => router.push('/create-project')}
-          >
-            <Ionicons name="add" size={18} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={styles.newProjectText}>New Project</Text>
-          </Pressable>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Page Header */}
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>Projects</Text>
+          <Text style={styles.pageSubtitle}>Manage and track all your projects</Text>
         </View>
 
-        <View style={styles.filterRow}>
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={18} color="#6B7280" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search projects..."
-              placeholderTextColor="#9CA3AF"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-          <Pressable 
-            style={[styles.statusFilter, { marginLeft: 12 }]}
-            onPress={() => {
-              const statuses = ['All Status', 'Active', 'Planning'];
-              const currentIndex = statuses.indexOf(statusFilter);
-              const nextIndex = (currentIndex + 1) % statuses.length;
-              setStatusFilter(statuses[nextIndex]);
-            }}
-          >
-            <Text style={styles.statusFilterText}>{statusFilter}</Text>
-            <Ionicons name="chevron-down" size={16} color="#6B7280" style={{ marginLeft: 8 }} />
-          </Pressable>
-        </View>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={true}>
-        <View style={styles.projectsList}>
-          {filteredProjects.map((project) => (
-            <Pressable
-              key={project.id}
-              style={styles.projectCard}
-              onPress={() => router.push(`/project-detail?id=${project.id}`)}
+        {/* Search and Filter Section */}
+        <View style={styles.sectionCard}>
+          <View style={styles.filterRow}>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={18} color="#6B7280" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search projects..."
+                placeholderTextColor="#9CA3AF"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+            <Pressable 
+              style={styles.statusFilter}
+              onPress={() => {
+                const statuses = ['All Status', 'Active', 'Planning'];
+                const currentIndex = statuses.indexOf(statusFilter);
+                const nextIndex = (currentIndex + 1) % statuses.length;
+                setStatusFilter(statuses[nextIndex]);
+              }}
             >
-              <View style={styles.projectHeader}>
-                <View style={styles.projectTitleRow}>
-                  <Text style={styles.projectTitle}>{project.title}</Text>
-                  <View style={[
-                    styles.statusBadge,
-                    project.status === 'Active' ? styles.statusActive : styles.statusPlanning
-                  ]}>
-                    <Text style={[
-                      styles.statusText,
-                      project.status === 'Active' ? styles.statusTextActive : styles.statusTextPlanning
-                    ]}>
-                      {project.status}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.projectDescription}>{project.description}</Text>
-              </View>
-              <View style={styles.projectMeta}>
-                <View style={styles.metaItem}>
-                  <Ionicons name="person-outline" size={14} color="#6B7280" style={{ marginRight: 6 }} />
-                  <Text style={styles.metaText}>{project.manager}</Text>
-                </View>
-                <View style={styles.metaItem}>
-                  <Ionicons name="calendar-outline" size={14} color="#6B7280" style={{ marginRight: 6 }} />
-                  <Text style={styles.metaText}>{project.date}</Text>
-                </View>
-              </View>
+              <Text style={styles.statusFilterText}>{statusFilter}</Text>
+              <Ionicons name="chevron-down" size={16} color="#6B7280" style={{ marginLeft: 8 }} />
             </Pressable>
-          ))}
+          </View>
+        </View>
+
+        {/* Projects List */}
+        <View style={styles.projectsSection}>
+          <View style={styles.projectsHeader}>
+            <Text style={styles.sectionTitle}>All Projects</Text>
+            <Pressable 
+              style={styles.newProjectButton}
+              onPress={() => setShowCreateModal(true)}
+            >
+              <Ionicons name="add" size={20} color="#fff" />
+              <Text style={styles.newProjectText}>New Project</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.projectsList}>
+            {loading && projects.length === 0 ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#2563EB" />
+                <Text style={styles.loadingText}>Loading projects...</Text>
+              </View>
+            ) : filteredProjects.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="folder-outline" size={48} color="#9CA3AF" />
+                <Text style={styles.emptyText}>No projects found</Text>
+                <Text style={styles.emptySubtext}>
+                  {searchQuery ? 'Try adjusting your search' : 'Create your first project to get started'}
+                </Text>
+              </View>
+            ) : (
+              filteredProjects.map((project) => (
+              <Pressable
+                key={project.id}
+                style={styles.projectCard}
+                onPress={() => router.push(`/project-detail?id=${project.id}`)}
+              >
+                <View style={styles.projectHeader}>
+                  <View style={styles.projectTitleRow}>
+                    <Text style={styles.projectTitle}>{project.title}</Text>
+                    <View style={[
+                      styles.statusBadge,
+                      project.status === 'Active' ? styles.statusActive : styles.statusPlanning
+                    ]}>
+                      <Text style={[
+                        styles.statusText,
+                        project.status === 'Active' ? styles.statusTextActive : styles.statusTextPlanning
+                      ]}>
+                        {project.status}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.projectDescription}>{project.description}</Text>
+                </View>
+                <View style={styles.projectMeta}>
+                  {project.startDate && (
+                    <View style={styles.metaItem}>
+                      <View style={[styles.metaIconWrapper, { backgroundColor: '#F3F4F6' }]}>
+                        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                      </View>
+                      <Text style={styles.metaText}>
+                        {formatDateForDisplay(project.startDate)}
+                        {project.endDate ? ` - ${formatDateForDisplay(project.endDate)}` : ''}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </Pressable>
+              ))
+            )}
+          </View>
         </View>
       </ScrollView>
 
@@ -307,34 +389,6 @@ export default function ProjectsScreen() {
                 />
               </View>
 
-              {/* Status & Budget Row */}
-              <View style={styles.formRow}>
-                <View style={[styles.formGroupHalf, { marginRight: 12 }]}>
-                  <Text style={styles.label}>Status</Text>
-                  <Pressable 
-                    style={styles.dropdown}
-                    onPress={() => {
-                      const currentIndex = statusOptions.indexOf(status);
-                      const nextIndex = (currentIndex + 1) % statusOptions.length;
-                      setStatus(statusOptions[nextIndex]);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>{status}</Text>
-                    <Ionicons name="chevron-down" size={16} color="#6B7280" style={{ marginLeft: 8 }} />
-                  </Pressable>
-                </View>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.label}>Budget ($)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="0"
-                    placeholderTextColor="#9CA3AF"
-                    value={budget}
-                    onChangeText={setBudget}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
 
               {/* Start Date & End Date Row */}
               <View style={styles.formRow}>
@@ -366,58 +420,6 @@ export default function ProjectsScreen() {
                 </View>
               </View>
 
-              {/* Project Manager */}
-              <View style={styles.formGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Project Manager</Text>
-                  <Text style={styles.requiredAsterisk}> *</Text>
-                </View>
-                <Pressable 
-                  style={styles.dropdown}
-                  onPress={() => {
-                    const currentIndex = projectManagers.indexOf(projectManager);
-                    const nextIndex = (currentIndex + 1) % projectManagers.length;
-                    setProjectManager(projectManagers[nextIndex]);
-                  }}
-                >
-                  <Text style={[styles.dropdownText, !projectManager && styles.dropdownPlaceholder]}>
-                    {projectManager || 'Select project manager'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color="#6B7280" style={{ marginLeft: 8 }} />
-                </Pressable>
-              </View>
-
-              {/* Team Members */}
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Team Members</Text>
-                <View style={styles.teamMembersList}>
-                  {teamMembers.map((member) => (
-                    <Pressable
-                      key={member.id}
-                      style={styles.teamMemberItem}
-                      onPress={() => toggleTeamMember(member.id)}
-                    >
-                      <View style={styles.teamMemberLeft}>
-                        <View style={styles.avatar}>
-                          <Text style={styles.avatarText}>{member.initials}</Text>
-                        </View>
-                        <View style={styles.teamMemberInfo}>
-                          <Text style={styles.teamMemberName}>{member.name}</Text>
-                          <Text style={styles.teamMemberEmail}>{member.email}</Text>
-                        </View>
-                      </View>
-                      <View style={[
-                        styles.checkbox,
-                        selectedTeamMembers.includes(member.id) && styles.checkboxChecked
-                      ]}>
-                        {selectedTeamMembers.includes(member.id) && (
-                          <Ionicons name="checkmark" size={14} color="#fff" />
-                        )}
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
 
               {/* Action Buttons */}
               <View style={styles.modalActions}>
@@ -425,11 +427,13 @@ export default function ProjectsScreen() {
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </Pressable>
                 <Pressable 
-                  style={[styles.createButton, (!projectName.trim() || !projectManager) && styles.createButtonDisabled]}
+                  style={[styles.createButton, (!projectName.trim() || loading) && styles.createButtonDisabled]}
                   onPress={handleCreateProject}
-                  disabled={!projectName.trim() || !projectManager}
+                  disabled={!projectName.trim() || loading}
                 >
-                  <Text style={styles.createButtonText}>Create Project</Text>
+                  <Text style={styles.createButtonText}>
+                    {loading ? 'Creating...' : 'Create Project'}
+                  </Text>
                 </Pressable>
               </View>
             </ScrollView>
@@ -443,52 +447,48 @@ export default function ProjectsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F3F4F6',
   },
-  header: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+  content: {
+    padding: 20,
+    paddingBottom: 40,
+    gap: 20,
   },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+  pageHeader: {
+    paddingHorizontal: 4,
   },
-  headerLeft: {
-    flex: 1,
-    marginRight: 16,
-  },
-  title: {
-    fontSize: 32,
+  pageTitle: {
+    fontSize: 26,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 16,
+  pageSubtitle: {
+    fontSize: 14,
     color: '#6B7280',
   },
-  newProjectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  newProjectText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+  sectionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
   searchContainer: {
     flex: 1,
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -513,10 +513,10 @@ const styles = StyleSheet.create({
   statusFilter: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     minWidth: 120,
@@ -526,20 +526,68 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontWeight: '500',
   },
-  content: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  projectsSection: {
+    gap: 16,
+  },
+  projectsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  newProjectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 8,
+    minWidth: 160,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#111827',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  newProjectText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   projectsList: {
-    padding: 20,
+    gap: 12,
   },
   projectCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 20,
+    padding: 18,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   projectHeader: {
     marginBottom: 12,
@@ -589,15 +637,50 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
+    gap: 16,
   },
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 16,
+    gap: 8,
+  },
+  metaIconWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metaText: {
     fontSize: 14,
     color: '#6B7280',
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
   },
   // Modal Styles
   modalOverlay: {

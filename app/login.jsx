@@ -74,7 +74,7 @@ export default function LoginScreen() {
   // Show error alert
   useEffect(() => {
     if (error && !isLoading) {
-      console.log('Showing error:', error);
+      // Only show alert, don't log the full error message again (already logged in authApi)
       alert(error);
       dispatch(clearError());
     }
@@ -130,12 +130,9 @@ export default function LoginScreen() {
       
       // Navigation will happen automatically via useEffect when isAuthenticated changes
     } catch (error) {
-      console.error('Login catch error:', error);
       // Error is already set in Redux state and will be shown by useEffect
-      // But also show alert here as fallback
-      if (error) {
-        alert(error || 'Login failed. Please check your credentials.');
-      }
+      // Don't show duplicate alert here - useEffect will handle it
+      console.error('Login failed:', error?.message || error);
     }
   };
 

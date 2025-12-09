@@ -2,10 +2,12 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Provider } from 'react-redux';
+import Toast from 'react-native-toast-message';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { store } from '@/store';
+import { toastConfig } from '@/utils/toastConfig';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -26,6 +28,12 @@ export default function RootLayout() {
             headerShown: true,
             title: 'Create Projects',
             headerBackTitle: 'Back'
+          }} 
+        />
+        <Stack.Screen 
+          name="project-detail" 
+          options={{ 
+            headerShown: false
           }} 
         />
         <Stack.Screen 
@@ -66,6 +74,7 @@ export default function RootLayout() {
         />
         </Stack>
         <StatusBar style="auto" />
+        <Toast config={toastConfig} />
       </ThemeProvider>
     </Provider>
   );

@@ -12,14 +12,14 @@ export const login = async (username, password) => {
   console.log('Attempting login to:', url);
   console.log('Request body:', { username, password: '***' });
   
-  // Create timeout promise
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Request timeout: Server did not respond within 10 seconds')), 10000);
-  });
+  // Use AbortController for proper timeout handling
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, 30000); // 30 seconds timeout
 
   try {
-    // Race between fetch and timeout
-    const fetchPromise = fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -29,9 +29,10 @@ export const login = async (username, password) => {
         username,
         password,
       }),
+      signal: controller.signal, // Enable abort
     });
 
-    const response = await Promise.race([fetchPromise, timeoutPromise]);
+    clearTimeout(timeoutId); // Clear timeout if request succeeds
     console.log('Response received, status:', response.status);
     
     if (!response.ok) {
@@ -59,90 +60,129 @@ export const login = async (username, password) => {
     console.log('Login successful, token received:', token.substring(0, 20) + '...');
     return token;
   } catch (error) {
-    console.error('Login error caught:', error);
-    console.error('Error type:', error.constructor.name);
-    console.error('Error message:', error.message);
-    console.error('API URL:', url);
+    clearTimeout(timeoutId); // Clear timeout in case of error
     
-    // Provide more helpful error messages
-    if (error.message.includes('Network request failed') || 
-        error.message.includes('Failed to fetch') ||
-        error.message.includes('timeout') ||
-        error.message.includes('NetworkError') ||
-        error.message.includes('Network request failed')) {
-      const platform = Platform.OS;
-      let troubleshooting = '';
-      
-      console.error('=== Connection Error Details ===');
-      console.error('Platform:', platform);
-      console.error('Trying URL:', url);
-      console.error('Error Type:', error.constructor.name);
-      console.error('Error Message:', error.message);
-      console.error('==============================');
+    // Log detailed error for debugging (only in console)
+    const platform = Platform.OS;
+    
+    // Check if it's an abort error (timeout)
+    const isTimeout = error.name === 'AbortError' || error.message.includes('aborted');
+    const isNetworkError = error.message.includes('Network request failed') || 
+                           error.message.includes('Failed to fetch') ||
+                           error.message.includes('NetworkError') ||
+                           error.message.includes('timeout');
+    
+    if (isTimeout || isNetworkError) {
+      // Build troubleshooting guide as single string
+      let troubleshootingGuide = '';
       
       if (platform === 'android') {
-        troubleshooting = `\n\n🔧 Hướng dẫn khắc phục cho Android:
+        troubleshootingGuide = `🔧 Troubleshooting Guide for Android:
+📍 Trying to connect to: ${url}
 
-1. ✅ Kiểm tra Backend có đang chạy không:
+1. ✅ Check if backend is running:
    cd App-ba
    mvn spring-boot:run
-   
-2. ✅ Test backend từ máy tính:
+
+2. ✅ Test backend from computer:
    curl http://localhost:8000/ba-todolist/api/auth/login
-   
-3. ✅ Nếu dùng Android Emulator:
-   - URL nên là: http://10.0.2.2:8000/ba-todolist/api
-   - Hoặc dùng IP máy tính: http://192.168.0.182:8000/ba-todolist/api
-   - Kiểm tra MANUAL_IP trong config/api.js
-   
-4. ✅ Nếu dùng Physical Device (điện thoại thật):
-   - Đảm bảo điện thoại và máy tính cùng WiFi
-   - Lấy IP máy tính: ipconfig (Windows) hoặc ifconfig (Mac/Linux)
-   - Cập nhật MANUAL_IP trong config/api.js với IP mới
-   
-5. ✅ Kiểm tra Firewall:
-   - Cho phép Java/Maven qua firewall
-   - Hoặc tạm thời tắt firewall để test`;
-      } else if (platform === 'ios') {
-        troubleshooting = `\n\n🔧 Hướng dẫn khắc phục cho iOS:
 
-1. ✅ Kiểm tra Backend có đang chạy không:
+3. ✅ For Android Emulator:
+   - Try: http://10.0.2.2:8000/ba-todolist/api
+   - Or use computer IP: http://192.168.1.242:8000/ba-todolist/api
+   - Check MANUAL_IP in config/api.js
+
+4. ✅ For Physical Device:
+   - Ensure phone and computer are on same WiFi
+   - Get computer IP: ipconfig (Windows) or ifconfig (Mac/Linux)
+   - Update MANUAL_IP in config/api.js
+
+5. ✅ Check Firewall:
+   - Allow Java/Maven through firewall
+   - Or temporarily disable firewall for testing
+
+6. ✅ Verify IP address:
+   - Run: ipconfig (Windows) to get current IP
+   - Update MANUAL_IP in config/api.js if changed`;
+      } else if (platform === 'ios') {
+        troubleshootingGuide = `🔧 Troubleshooting Guide for iOS:
+📍 Trying to connect to: ${url}
+
+1. ✅ Check if backend is running:
    cd App-ba
    mvn spring-boot:run
-   
+
 2. ✅ Test backend:
    curl http://localhost:8000/ba-todolist/api/auth/login
-   
-3. ✅ Nếu dùng iOS Simulator:
-   - URL: http://localhost:8000/ba-todolist/api
-   - Đảm bảo backend đang chạy trên máy Mac
-   
-4. ✅ Nếu dùng Physical Device:
-   - Dùng IP máy tính thay vì localhost
-   - Cập nhật config/api.js để dùng IP máy tính`;
+
+3. ✅ For iOS Simulator:
+   - If on Mac: Use http://localhost:8000/ba-todolist/api
+   - If on Windows: Use computer IP: http://192.168.1.242:8000/ba-todolist/api
+   - Check MANUAL_IP in config/api.js
+
+4. ✅ For Physical Device:
+   - Ensure device and computer are on same WiFi
+   - Use computer IP instead of localhost
+   - Update config/api.js to use computer IP: 192.168.1.242
+
+5. ✅ Check Firewall:
+   - Allow Java/Maven through firewall
+   - Windows Firewall may block port 8000
+
+6. ✅ Verify IP address:
+   - Run: ipconfig (Windows) to get current IP
+   - Update MANUAL_IP in config/api.js if changed`;
       } else {
         // Web platform
-        troubleshooting = `\n\n🔧 Hướng dẫn khắc phục cho Web:
+        troubleshootingGuide = `🔧 Troubleshooting Guide for Web:
+📍 Trying to connect to: ${url}
 
-1. ✅ Kiểm tra Backend có đang chạy không:
+1. ✅ Check if backend is running:
    cd App-ba
    mvn spring-boot:run
-   
+
 2. ✅ Test backend:
    curl http://localhost:8000/ba-todolist/api/auth/login
-   
-3. ✅ Kiểm tra browser console:
-   - Mở Developer Tools (F12)
-   - Xem tab Network để kiểm tra request
-   
-4. ✅ Nếu backend chạy trên máy khác:
-   - Cập nhật config/api.js để dùng IP máy tính thay vì localhost`;
+
+3. ✅ Check browser console:
+   - Open Developer Tools (F12)
+   - Check Network tab for request details
+
+4. ✅ If backend runs on different machine:
+   - Update config/api.js to use computer IP instead of localhost`;
       }
       
-      const errorMsg = `❌ Không thể kết nối đến server.\n\n📍 Đang cố kết nối đến: ${url}\n\n${troubleshooting}\n\n💡 Xem file TROUBLESHOOTING.md để biết thêm chi tiết.`;
-      throw new Error(errorMsg);
+      // Log all troubleshooting info in ONE console.error call
+      console.error(`=== Login Connection Error ===
+Platform: ${platform}
+Error Type: ${error.constructor.name}
+Error Name: ${error.name}
+Error Message: ${error.message}
+Is Timeout: ${isTimeout}
+Is Network Error: ${isNetworkError}
+${troubleshootingGuide}
+=====================================`);
+      
+      // Return short, user-friendly error message for alert
+      if (isTimeout) {
+        throw new Error('Kết nối timeout.\n\nVui lòng kiểm tra:\n• Backend có đang chạy không?\n• IP trong config/api.js có đúng không?\n• Firewall có chặn port 8000 không?\n\nXem console để biết thêm chi tiết.');
+      } else {
+        throw new Error('Không thể kết nối đến server.\n\nVui lòng kiểm tra:\n• Backend có đang chạy không?\n• Kết nối mạng có ổn định không?\n• IP trong config/api.js có đúng không?\n\nXem console để biết thêm chi tiết.');
+      }
     }
-    throw error;
+    
+    // For other errors, log basic info
+    console.error(`Login error: ${error.message || error}`);
+    console.error(`API URL: ${url}`);
+    console.error(`Error name: ${error.name}`);
+    
+    // Return the original message (but truncate if too long)
+    const errorMsg = error.message || 'Đăng nhập thất bại. Vui lòng thử lại.';
+    const maxLength = 200;
+    const finalErrorMsg = errorMsg.length > maxLength 
+      ? errorMsg.substring(0, maxLength) + '...' 
+      : errorMsg;
+    throw new Error(finalErrorMsg);
   }
 };
 

@@ -43,9 +43,9 @@ export default function TabLayout() {
                }}
              />
       <Tabs.Screen
-        name="inbox"
+        name="my-tasks"
         options={{
-          title: 'Inbox',
+          title: 'My Tasks',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons 
               name={focused ? 'download' : 'download-outline'} 

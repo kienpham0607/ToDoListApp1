@@ -10,15 +10,12 @@ export default function CreateProjectScreen() {
   // Form states
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState('Planning');
-  const [budget, setBudget] = useState('0');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [projectManager, setProjectManager] = useState('');
   const [selectedTeamMembers, setSelectedTeamMembers] = useState([]);
   const [showManagerPicker, setShowManagerPicker] = useState(false);
   const [showTeamMembersPicker, setShowTeamMembersPicker] = useState(false);
-  const [showStatusPicker, setShowStatusPicker] = useState(false);
   const managerDropdownRef = useRef(null);
   const teamMembersDropdownRef = useRef(null);
   const scrollViewRef = useRef(null);
@@ -38,8 +35,6 @@ export default function CreateProjectScreen() {
     'Admin User',
     'Team Lead',
   ];
-
-  const statusOptions = ['Planning', 'Active', 'On Hold', 'Completed'];
 
   const toggleTeamMember = (memberId) => {
     setSelectedTeamMembers(prev => 
@@ -95,7 +90,7 @@ export default function CreateProjectScreen() {
         {/* Title Section */}
         <View style={styles.titleSection}>
           <Text style={styles.headerTitle}>Create New Project</Text>
-          <Text style={styles.headerSubtitle}>Add a new project with team members and budget details</Text>
+          <Text style={styles.headerSubtitle}>Add a new project with team members</Text>
         </View>
         {/* Project Name */}
         <View style={styles.formGroup}>
@@ -125,66 +120,6 @@ export default function CreateProjectScreen() {
             numberOfLines={4}
             textAlignVertical="top"
           />
-        </View>
-
-        {/* Status & Budget Row */}
-        <View style={styles.formRow}>
-          <View style={[styles.formGroupHalf, { marginRight: 12, zIndex: 10004, position: 'relative' }]}>
-            <Text style={styles.label}>Status</Text>
-            <View style={[styles.dropdownContainer, { zIndex: 10005 }]}>
-              <Pressable 
-                style={styles.dropdown}
-                onPress={() => setShowStatusPicker(!showStatusPicker)}
-              >
-                <Text style={styles.dropdownText}>{status}</Text>
-                <Ionicons 
-                  name={showStatusPicker ? "chevron-up" : "chevron-down"} 
-                  size={16} 
-                  color="#6B7280" 
-                  style={{ marginLeft: 8 }} 
-                />
-              </Pressable>
-              {showStatusPicker && (
-                <View style={[styles.dropdownList, { zIndex: 10006, elevation: 30 }]}>
-                  {statusOptions.map((option, index) => (
-                    <Pressable
-                      key={index}
-                      style={[
-                        styles.dropdownItem,
-                        status === option && styles.dropdownItemSelected,
-                        index === statusOptions.length - 1 && styles.dropdownItemLast
-                      ]}
-                      onPress={() => {
-                        setStatus(option);
-                        setShowStatusPicker(false);
-                      }}
-                    >
-                      <Text style={[
-                        styles.dropdownItemText,
-                        status === option && styles.dropdownItemTextSelected
-                      ]}>
-                        {option}
-                      </Text>
-                      {status === option && (
-                        <Ionicons name="checkmark" size={18} color="#2563EB" />
-                      )}
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
-          <View style={styles.formGroupHalf}>
-            <Text style={styles.label}>Budget ($)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="0"
-              placeholderTextColor="#9CA3AF"
-              value={budget}
-              onChangeText={setBudget}
-              keyboardType="numeric"
-            />
-          </View>
         </View>
 
         {/* Start Date & End Date Row */}
