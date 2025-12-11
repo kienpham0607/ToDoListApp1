@@ -1,15 +1,31 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
-import { logoutUser } from '@/store/authSlice';
+import { logoutUser, selectToken, selectUserInfo } from '@/store/authSlice';
+import { fetchTasks, selectTasks, selectTasksLoading } from '@/store/taskSlice';
+import { fetchProjects, selectProjects, selectProjectLoading } from '@/store/projectSlice';
 
 export default function HomeScreen() {
   const router = useRouter();
   const dispatch = useDispatch();
-  const { isAuthenticated, userInfo } = useSelector((state) => state.auth);
+  const { isAuthenticated } = useSelector((state) => state.auth);
+  const userInfo = useSelector(selectUserInfo);
+  const token = useSelector(selectToken);
+  const tasks = useSelector(selectTasks);
+  const tasksLoading = useSelector(selectTasksLoading);
+  const projects = useSelector(selectProjects);
+  const projectsLoading = useSelector(selectProjectLoading);
+
+  // Fetch data when component mounts
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      dispatch(fetchTasks({ token, offset: 0, limit: 1000 }));
+      dispatch(fetchProjects({ token, offset: 0, limit: 1000 }));
+    }
+  }, [isAuthenticated, token, dispatch]);
 
   const handleLogin = () => {
     router.push('/login');
@@ -18,11 +34,9 @@ export default function HomeScreen() {
   const handleLogout = async () => {
     try {
       await dispatch(logoutUser()).unwrap();
-      // Navigate to login screen after logout
       router.replace('/login');
     } catch (error) {
       console.error('Logout error:', error);
-      // Still navigate to login even if logout fails
       router.replace('/login');
     }
   };
@@ -34,16 +48,113 @@ export default function HomeScreen() {
     }
   }, [isAuthenticated, router]);
 
-  const inProgressTasks = [
-    { id: '1', title: 'Office Project', description: 'Grocery shopping app design', progress: 75, color: '#2196F3', icon: 'briefcase' },
-    { id: '2', title: 'Personal Project', description: 'Uber Eats redesign challenge', progress: 45, color: '#FF9800', icon: 'person' },
-  ];
+  // Calculate today's tasks statistics
+  const todayStats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayTasks = tasks.filter(task => {
+      if (!task.dueDate) return false;
+      const taskDate = new Date(task.dueDate);
+      taskDate.setHours(0, 0, 0, 0);
+      return taskDate.getTime() === today.getTime();
+    });
 
-  const taskGroups = [
-    { id: '1', title: 'Office Project', tasks: 23, progress: 70, color: '#E91E63', icon: 'briefcase' },
-    { id: '2', title: 'Personal Project', tasks: 30, progress: 52, color: '#9C27B0', icon: 'person' },
-    { id: '3', title: 'Daily Study', tasks: 30, progress: 87, color: '#FF9800', icon: 'book' },
-  ];
+    const completedToday = todayTasks.filter(task => task.progress === 100).length;
+    const totalToday = todayTasks.length;
+    const progress = totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
+
+    return {
+      total: totalToday,
+      completed: completedToday,
+      progress,
+    };
+  }, [tasks]);
+
+  // Get in progress tasks (progress > 0 and < 100)
+  const inProgressTasks = useMemo(() => {
+    const inProgress = tasks.filter(task => 
+      task.progress > 0 && task.progress < 100
+    ).slice(0, 10); // Limit to 10 tasks
+
+    // Map to display format with colors
+    const colors = ['#2196F3', '#FF9800', '#4CAF50', '#9C27B0', '#F44336', '#00BCD4'];
+    const icons = ['briefcase', 'person', 'book', 'home', 'school', 'build'];
+    
+    return inProgress.map((task, index) => {
+      const projectName = task.projectName || 'Personal';
+      const colorIndex = index % colors.length;
+      
+      return {
+        id: task.id,
+        title: projectName,
+        description: task.name || task.description || '',
+        progress: task.progress || 0,
+        color: colors[colorIndex],
+        icon: icons[colorIndex % icons.length],
+      };
+    });
+  }, [tasks]);
+
+  // Calculate task groups (projects) statistics
+  const taskGroups = useMemo(() => {
+    const projectStats = {};
+    
+    // Group tasks by project
+    tasks.forEach(task => {
+      const projectName = task.projectName || 'Personal';
+      const projectId = task.projectId || null;
+      
+      if (!projectStats[projectName]) {
+        projectStats[projectName] = {
+          name: projectName,
+          projectId: projectId,
+          tasks: [],
+          total: 0,
+          completed: 0,
+        };
+      }
+      projectStats[projectName].tasks.push(task);
+      projectStats[projectName].total++;
+      // Keep the first non-null projectId found
+      if (!projectStats[projectName].projectId && projectId) {
+        projectStats[projectName].projectId = projectId;
+      }
+      if (task.progress === 100) {
+        projectStats[projectName].completed++;
+      }
+    });
+
+    // Try to match projectName with projects to get projectId
+    const projectNameToIdMap = {};
+    projects.forEach(project => {
+      projectNameToIdMap[project.name] = project.id;
+    });
+
+    // Convert to array and calculate progress
+    const colors = ['#E91E63', '#9C27B0', '#FF9800', '#2196F3', '#4CAF50', '#F44336'];
+    const icons = ['briefcase', 'person', 'book', 'home', 'school', 'build'];
+    
+    return Object.values(projectStats).map((stat, index) => {
+      const progress = stat.total > 0 
+        ? Math.round((stat.completed / stat.total) * 100) 
+        : 0;
+      const colorIndex = index % colors.length;
+      
+      // Try to get projectId from projects list if not found in tasks
+      const finalProjectId = stat.projectId || projectNameToIdMap[stat.name] || null;
+      
+      return {
+        id: stat.name,
+        title: stat.name,
+        projectId: finalProjectId,
+        tasks: stat.total,
+        progress,
+        color: colors[colorIndex],
+        icon: icons[colorIndex % icons.length],
+      };
+    }).sort((a, b) => b.tasks - a.tasks); // Sort by number of tasks
+  }, [tasks, projects]);
 
 
   return (
@@ -89,18 +200,27 @@ export default function HomeScreen() {
         {/* Today's Task Summary Card */}
         <View style={styles.summaryCard}>
           <View style={styles.summaryHeader}>
-            <Text style={styles.summaryText}>Your today&apos;s task almost done!</Text>
+            <Text style={styles.summaryText}>
+              {todayStats.total === 0 
+                ? "You don't have any tasks today!" 
+                : todayStats.progress === 100
+                ? "All today's tasks completed!"
+                : "Your today's task almost done!"}
+            </Text>
             <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
           </View>
           <View style={styles.summaryContent}>
             <View style={styles.summaryLeft}>
-              <Pressable style={styles.viewTaskButton}>
+              <Pressable 
+                style={styles.viewTaskButton}
+                onPress={() => router.push('/(tabs)/my-tasks')}
+              >
                 <Text style={styles.viewTaskText}>View Task</Text>
               </Pressable>
             </View>
             <View style={styles.progressContainer}>
               <View style={styles.progressCircle}>
-                <Text style={styles.progressText}>85%</Text>
+                <Text style={styles.progressText}>{todayStats.progress}%</Text>
               </View>
             </View>
           </View>
@@ -111,24 +231,35 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>In Progress</Text>
             <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>6</Text>
+              <Text style={styles.sectionBadgeText}>{inProgressTasks.length}</Text>
             </View>
-
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-            {inProgressTasks.map((task) => (
-              <View key={task.id} style={[styles.taskCard, { backgroundColor: task.color }]}>
-                <View style={styles.taskCardHeader}>
-                  <Text style={styles.taskCardTitle}>{task.title}</Text>
-                  <Ionicons name={task.icon} size={20} color="#fff" />
+          {tasksLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#9C27B0" />
+            </View>
+          ) : inProgressTasks.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No tasks in progress</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+              {inProgressTasks.map((task) => (
+                <View key={task.id} style={[styles.taskCard, { backgroundColor: task.color }]}>
+                  <View style={styles.taskCardHeader}>
+                    <Text style={styles.taskCardTitle}>{task.title}</Text>
+                    <Ionicons name={task.icon} size={20} color="#fff" />
+                  </View>
+                  <Text style={styles.taskCardDescription} numberOfLines={2}>
+                    {task.description}
+                  </Text>
+                  <View style={styles.taskProgressBar}>
+                    <View style={[styles.taskProgressFill, { width: `${task.progress}%` }]} />
+                  </View>
                 </View>
-                <Text style={styles.taskCardDescription}>{task.description}</Text>
-                <View style={styles.taskProgressBar}>
-                  <View style={[styles.taskProgressFill, { width: `${task.progress}%` }]} />
-                </View>
-              </View>
-            ))}
-          </ScrollView>
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         {/* Task Groups Section */}
@@ -136,32 +267,53 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Task Groups</Text>
             <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>4</Text>
+              <Text style={styles.sectionBadgeText}>{taskGroups.length}</Text>
             </View>
-
           </View>
-          {taskGroups.map((group) => (
-            <View key={group.id} style={styles.groupCard}>
-              <View style={styles.groupLeft}>
-                <View style={[styles.groupIcon, { backgroundColor: group.color }]}>
-                  <Ionicons name={group.icon} size={20} color="#fff" />
-                </View>
-                <View style={styles.groupInfo}>
-                  <Text style={styles.groupTitle}>{group.title}</Text>
-                  <Text style={styles.groupTasks}>{group.tasks} Tasks</Text>
-                </View>
-              </View>
-              <View style={styles.groupProgress}>
-                <Text style={[styles.groupProgressText, { color: group.color }]}>{group.progress}%</Text>
-                <View style={styles.groupProgressCircle}>
-                  <View style={[styles.groupProgressFill, { 
-                    backgroundColor: group.color,
-                    transform: [{ rotate: `${(group.progress / 100) * 360}deg` }]
-                  }]} />
-                </View>
-              </View>
+          {projectsLoading || tasksLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#9C27B0" />
             </View>
-          ))}
+          ) : taskGroups.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No task groups yet</Text>
+            </View>
+          ) : (
+            taskGroups.map((group) => (
+              <Pressable 
+                key={group.id} 
+                style={styles.groupCard}
+                onPress={() => {
+                  if (group.title === 'Personal' || !group.projectId) {
+                    // Navigate to personal tasks
+                    router.push('/(tabs)/my-tasks');
+                  } else {
+                    // Navigate to project detail page with projectId
+                    router.push(`/project-detail?id=${group.projectId}`);
+                  }
+                }}
+              >
+                <View style={styles.groupLeft}>
+                  <View style={[styles.groupIcon, { backgroundColor: group.color }]}>
+                    <Ionicons name={group.icon} size={20} color="#fff" />
+                  </View>
+                  <View style={styles.groupInfo}>
+                    <Text style={styles.groupTitle}>{group.title}</Text>
+                    <Text style={styles.groupTasks}>{group.tasks} Tasks</Text>
+                  </View>
+                </View>
+                <View style={styles.groupProgress}>
+                  <Text style={[styles.groupProgressText, { color: group.color }]}>{group.progress}%</Text>
+                  <View style={styles.groupProgressCircle}>
+                    <View style={[styles.groupProgressFill, { 
+                      backgroundColor: group.color,
+                      transform: [{ rotate: `${(group.progress / 100) * 360}deg` }]
+                    }]} />
+                  </View>
+                </View>
+              </Pressable>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -445,6 +597,21 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
   },
 });
 

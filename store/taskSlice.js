@@ -327,10 +327,15 @@ const taskSlice = createSlice({
       .addCase(updateExistingTask.fulfilled, (state, action) => {
         state.loading = false;
         const updatedTask = action.payload;
+        console.log('Redux: Task updated, new status:', updatedTask.status, 'progress:', updatedTask.progress);
         // Update in tasks list
         const taskIndex = state.tasks.findIndex((t) => t.id === updatedTask.id);
         if (taskIndex !== -1) {
+          console.log('Redux: Updating existing task at index', taskIndex);
           state.tasks[taskIndex] = updatedTask;
+        } else {
+          console.log('Redux: Task not found in list, adding it');
+          state.tasks.push(updatedTask);
         }
         // Update in myTasks if it's a personal task
         if (!updatedTask.projectName || updatedTask.projectName === '') {

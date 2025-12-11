@@ -6,6 +6,50 @@ import { getUserById, getUserByUsername, updateMyProfile as updateMyProfileAPI }
 const TOKEN_KEY = 'todyapp_token_v1';
 const CREDENTIAL_KEY = 'todyapp_credentials_v1';
 
+// Robust Base64 decode function
+const decodeBase64 = (input) => {
+  try {
+    if (typeof atob === 'function') {
+      return atob(input);
+    }
+  } catch (e) {
+    // Fallthrough to polyfill
+  }
+
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  let str = input.replace(/=+$/, '');
+  let output = '';
+
+  if (str.length % 4 == 1) {
+    throw new Error("'atob' failed: The string to be decoded is not correctly encoded.");
+  }
+
+  for (let bc = 0, bs = 0, buffer, i = 0;
+    buffer = str.charAt(i++);
+    ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer,
+      bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0
+  ) {
+    buffer = chars.indexOf(buffer);
+  }
+
+  return output;
+};
+
+// Helper to parse JWT
+const parseJwt = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(decodeBase64(base64).split('').map(function (c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    console.warn('Redux: Error parsing JWT:', e);
+    return null;
+  }
+};
+
 // Async thunk for login
 export const loginUser = createAsyncThunk(
   'auth/login',
@@ -17,7 +61,7 @@ export const loginUser = createAsyncThunk(
       // Save token to secure store
       await SecureStore.setItemAsync(TOKEN_KEY, token);
       console.log('Redux: Token saved successfully');
-      
+
       // Get user info after login
       let userInfo = null;
       try {
@@ -28,12 +72,22 @@ export const loginUser = createAsyncThunk(
         // If can't get user info, just use username
         userInfo = { username, fullName: username };
       }
-      
-      // Token expires in 1 hour (3600000 milliseconds)
-      const tokenExpiry = Date.now() + 60 * 60 * 1000; // 1 hour from now
-      
-      return { 
-        token, 
+
+      // Calculate expiry from token
+      let tokenExpiry = null;
+      const decoded = parseJwt(token);
+      if (decoded && decoded.exp) {
+        tokenExpiry = decoded.exp * 1000; // Convert to ms
+        console.log('Redux: Token expires at:', new Date(tokenExpiry).toLocaleString());
+      } else {
+        // Fallback if parsing fails (shouldn't happen with valid JWT)
+        // Default to 24 hours to match backend
+        tokenExpiry = Date.now() + 24 * 60 * 60 * 1000;
+        console.log('Redux: Could not parse token expiry, using default 24h');
+      }
+
+      return {
+        token,
         username,
         userInfo: userInfo || { username, fullName: username },
         tokenExpiry
@@ -58,7 +112,7 @@ export const registerUser = createAsyncThunk(
       const result = await registerAPI(username, email, password, fullName, role);
       console.log('Redux: Registration successful');
       // Store user info for display (since register doesn't return user object)
-      return { 
+      return {
         result,
         userInfo: { username, email, fullName, role }
       };
@@ -75,11 +129,33 @@ export const loadToken = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      console.log('Loaded token from storage:', token ? 'Token exists' : 'No token');
-      return token;
+
+      if (token) {
+        // Validation: Check if token is expired
+        const decoded = parseJwt(token);
+        if (decoded && decoded.exp) {
+          const expiry = decoded.exp * 1000;
+          if (Date.now() >= expiry) {
+            console.log('Redux: Loaded token is EXPIRED. Discarding.');
+            await SecureStore.deleteItemAsync(TOKEN_KEY);
+            return null;
+          }
+          console.log('Redux: Loaded token is valid until:', new Date(expiry).toLocaleString());
+          // Return both token and expiry
+          return { token, tokenExpiry: expiry };
+        } else {
+          // Fallback: If we can't decode it, we can either discard it or keep it conservatively.
+          // Given the robust decoder, failure likely means invalid token. Discard.
+          console.warn('Redux: Could not decode loaded token. Discarding.');
+          await SecureStore.deleteItemAsync(TOKEN_KEY);
+          return null;
+        }
+      }
+
+      console.log('Loaded token from storage: No token');
+      return null;
     } catch (error) {
       console.error('Error loading token:', error);
-      // Don't reject, just return null if no token
       return null;
     }
   }
@@ -119,11 +195,11 @@ export const updateUserProfile = createAsyncThunk(
     try {
       const state = getState();
       const token = state.auth.token;
-      
+
       if (!token) {
         return rejectWithValue('No authentication token found. Please login again.');
       }
-      
+
       console.log('Redux: Updating my profile (using /user/profile endpoint)');
       // Use new endpoint that gets user from JWT token
       const updatedUser = await updateMyProfileAPI(token, updateData);
@@ -143,11 +219,11 @@ export const refreshUserInfo = createAsyncThunk(
     try {
       const state = getState();
       const token = state.auth.token;
-      
+
       if (!token) {
         return rejectWithValue('No authentication token found. Please login again.');
       }
-      
+
       console.log('Redux: Refreshing user info:', userId);
       const userInfo = await getUserById(token, userId);
       console.log('Redux: User info refreshed:', userInfo);
@@ -180,16 +256,16 @@ export const changePassword = createAsyncThunk(
       console.log('Redux: Token exists:', !!token);
       console.log('Redux: Token length:', token.length);
       console.log('Redux: Token preview:', token.substring(0, 20) + '...');
-      
+
       // Backend now only updates fields that are provided (not null)
       // So we only send password field - other fields will remain unchanged
       // Note: userId is not needed anymore - backend gets it from JWT token
       const updateData = {
         password: newPassword,
       };
-      
+
       console.log('Redux: Updating password only');
-      
+
       // Use new endpoint that gets user from JWT token
       const updatedUser = await updateMyProfileAPI(token, updateData);
       console.log('Redux: Password changed successfully');
@@ -214,28 +290,39 @@ export const checkTokenExpiry = createAsyncThunk(
   async (_, { getState, dispatch }) => {
     const state = getState();
     const { token, tokenExpiry, isAuthenticated } = state.auth;
-    
+
     // If no token or not authenticated, nothing to check
     if (!token || !isAuthenticated) {
       return { isValid: false };
     }
-    
+
     // If no expiry set, assume token is valid (backward compatibility)
     if (!tokenExpiry) {
+      // Try to parse now if we have token
+      const decoded = parseJwt(token);
+      if (decoded && decoded.exp) {
+        const expiry = decoded.exp * 1000;
+        if (Date.now() >= expiry) {
+          console.log('Token expired (checked late), logging out...');
+          await dispatch(logoutUser());
+          return { isValid: false, expired: true };
+        }
+        return { isValid: true, expiresIn: expiry - Date.now() };
+      }
       return { isValid: true };
     }
-    
+
     // Check if token is expired
     const now = Date.now();
     const isValid = now < tokenExpiry;
-    
+
     if (!isValid) {
       console.log('Token expired, logging out...');
       // Token expired, logout user
       await dispatch(logoutUser());
       return { isValid: false, expired: true };
     }
-    
+
     return { isValid: true, expiresIn: tokenExpiry - now };
   }
 );
@@ -247,7 +334,7 @@ const initialState = {
   isLoading: false,
   error: null,
   isAuthenticated: false,
-  tokenExpiry: null, // Timestamp when token expires (1 hour from login)
+  tokenExpiry: null, // Timestamp when token expires
 };
 
 const authSlice = createSlice({
@@ -302,44 +389,32 @@ const authSlice = createSlice({
       })
       .addCase(loadToken.fulfilled, (state, action) => {
         if (action.payload) {
-          const token = action.payload;
+          // Payload is now object { token, tokenExpiry }
+          const { token, tokenExpiry } = action.payload;
           state.token = token;
-          
-          // Check if token is expired (if we have expiry info)
-          // For now, assume token is valid if it exists
-          // In production, you should decode JWT to check expiry
           state.isAuthenticated = true;
-          // Set expiry to 1 hour from now if not already set
-          if (!state.tokenExpiry) {
-            state.tokenExpiry = Date.now() + 60 * 60 * 1000;
-          }
+          state.tokenExpiry = tokenExpiry;
+
           console.log('Token loaded, user authenticated');
         } else {
           // Only clear token if user is not already authenticated
-          // This prevents clearing token during updates/refreshes
-          // Only clear if we're sure there's no token AND user is not authenticated
           if (!state.isAuthenticated && !state.token) {
             state.token = null;
             state.isAuthenticated = false;
             state.tokenExpiry = null;
             console.log('No token found, user not authenticated');
           } else {
-            // If user is already authenticated, don't clear token
-            // This might be a temporary SecureStore read issue
             console.log('Token not found in storage, but user is already authenticated. Keeping current state.');
           }
         }
       })
       .addCase(loadToken.rejected, (state) => {
         // Only clear token if user is not already authenticated
-        // This prevents clearing token during updates/refreshes
         if (!state.isAuthenticated && !state.token) {
           state.token = null;
           state.isAuthenticated = false;
           console.log('Token load failed, user not authenticated');
         } else {
-          // If user is already authenticated, don't clear token
-          // This might be a temporary SecureStore read error
           console.log('Token load failed, but user is already authenticated. Keeping current state.');
         }
       });
@@ -366,30 +441,22 @@ const authSlice = createSlice({
         state.userInfo = action.payload;
         state.username = action.payload.username;
         state.error = null;
-        // Keep token and isAuthenticated unchanged - don't logout after update
-        // Token remains valid, user stays logged in
       })
       .addCase(updateUserProfile.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
-        // Don't logout on error - keep user logged in
-        // Only logout if token is actually invalid (handled by API interceptor if needed)
       });
 
     // Refresh User Info
     builder
       .addCase(refreshUserInfo.pending, (state) => {
-        // Don't change loading state for refresh
       })
       .addCase(refreshUserInfo.fulfilled, (state, action) => {
         state.userInfo = action.payload;
         state.username = action.payload.username;
-        // Keep token and isAuthenticated unchanged - don't logout after refresh
       })
       .addCase(refreshUserInfo.rejected, (state, action) => {
         console.error('Failed to refresh user info:', action.payload);
-        // Don't logout on error - keep user logged in
-        // Only log the error, don't change authentication state
       });
 
     // Check Token Expiry
@@ -397,7 +464,6 @@ const authSlice = createSlice({
       .addCase(checkTokenExpiry.fulfilled, (state, action) => {
         if (!action.payload.isValid && action.payload.expired) {
           // Token expired, logout handled by logoutUser thunk
-          // This case is handled by logoutUser.fulfilled above
         }
       });
 
@@ -409,8 +475,6 @@ const authSlice = createSlice({
       })
       .addCase(changePassword.fulfilled, (state, action) => {
         state.isLoading = false;
-        // Password changed successfully, but user info doesn't change
-        // Just clear error, don't update userInfo as password is not returned
         state.error = null;
       })
       .addCase(changePassword.rejected, (state, action) => {
@@ -476,4 +540,3 @@ export const selectUserId = createSelector(
   [selectUserInfo],
   (userInfo) => userInfo?.id
 );
-

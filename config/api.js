@@ -22,7 +22,7 @@ const MANUAL_IP = '192.168.0.182'; // ⚠️ AUTO-UPDATED: IP của máy chạy 
 
 const getBaseURL = () => {
   const platform = Platform.OS;
-  
+
   // Android Emulator hoặc Physical Device
   if (platform === 'android') {
     // Dùng MANUAL_IP (IP LAN) thay vì 10.0.2.2 vì 10.0.2.2 có thể không hoạt động
@@ -35,8 +35,8 @@ const getBaseURL = () => {
     // Fallback: Thử dùng 10.0.2.2 nếu không có MANUAL_IP
     console.log('Using default Android Emulator IP: 10.0.2.2');
     return 'http://10.0.2.2:8000/ba-todolist/api';
-  } 
-  
+  }
+
   // iOS Simulator
   if (platform === 'ios') {
     // Trên Windows, iOS Simulator có thể không truy cập được localhost
@@ -48,7 +48,7 @@ const getBaseURL = () => {
     console.log('Using localhost for iOS Simulator');
     return 'http://localhost:8000/ba-todolist/api';
   }
-  
+
   // Web platform
   // Nếu đang chạy trên web và backend chạy trên máy khác, có thể cần dùng IP
   // Nhưng mặc định dùng localhost cho web

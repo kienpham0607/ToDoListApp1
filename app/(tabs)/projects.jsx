@@ -1,19 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import Toast from 'react-native-toast-message';
 import { 
   fetchProjects, 
   createNewProject,
-  deleteProjectById,
   selectProjects,
   selectProjectLoading,
   selectProjectError,
   clearError
 } from '@/store/projectSlice';
+import {
+  fetchAllUsers,
+  addMemberToProject,
+  selectUsers
+} from '@/store/teamSlice';
 import { selectToken, selectIsAuthenticated } from '@/store/authSlice';
 
 export default function ProjectsScreen() {
@@ -24,6 +28,7 @@ export default function ProjectsScreen() {
   const projects = useSelector(selectProjects);
   const loading = useSelector(selectProjectLoading);
   const error = useSelector(selectProjectError);
+  const allUsers = useSelector(selectUsers);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
@@ -34,6 +39,14 @@ export default function ProjectsScreen() {
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedMembers, setSelectedMembers] = useState([]); // Array of usernames
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  
+  // Date picker states
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [tempStartDate, setTempStartDate] = useState(new Date());
+  const [tempEndDate, setTempEndDate] = useState(new Date());
 
   // Fetch data when component mounts or when authenticated
   useEffect(() => {
@@ -73,6 +86,202 @@ export default function ProjectsScreen() {
     setDescription('');
     setStartDate('');
     setEndDate('');
+    setSelectedMembers([]);
+    setMemberSearchQuery('');
+  };
+
+  // Fetch users when modal opens
+  useEffect(() => {
+    if (showCreateModal && isAuthenticated && token) {
+      dispatch(fetchAllUsers({ token, offset: 0, limit: 1000 }));
+    }
+  }, [showCreateModal, isAuthenticated, token, dispatch]);
+
+  // Filter available users for member selection
+  const availableUsersForSelection = useMemo(() => {
+    if (!allUsers || allUsers.length === 0) return [];
+    
+    return allUsers.filter(user => {
+      // Filter by search query
+      if (memberSearchQuery.trim()) {
+        const query = memberSearchQuery.toLowerCase();
+        const matchesName = (user.fullName || '').toLowerCase().includes(query);
+        const matchesUsername = (user.username || '').toLowerCase().includes(query);
+        const matchesEmail = (user.email || '').toLowerCase().includes(query);
+        return matchesName || matchesUsername || matchesEmail;
+      }
+      return true;
+    });
+  }, [allUsers, memberSearchQuery]);
+
+  const toggleMemberSelection = (username) => {
+    setSelectedMembers(prev => {
+      if (prev.includes(username)) {
+        return prev.filter(u => u !== username);
+      } else {
+        return [...prev, username];
+      }
+    });
+  };
+
+  const formatDateForInput = (date) => {
+    if (!date) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const openStartDatePicker = () => {
+    if (startDate) {
+      setTempStartDate(new Date(startDate));
+    } else {
+      setTempStartDate(new Date());
+    }
+    setShowStartDatePicker(true);
+  };
+
+  const openEndDatePicker = () => {
+    if (endDate) {
+      setTempEndDate(new Date(endDate));
+    } else {
+      setTempEndDate(startDate ? new Date(startDate) : new Date());
+    }
+    setShowEndDatePicker(true);
+  };
+
+  const closeStartDatePicker = () => {
+    setShowStartDatePicker(false);
+  };
+
+  const closeEndDatePicker = () => {
+    setShowEndDatePicker(false);
+  };
+
+  // Render calendar days for start date
+  const renderStartCalendarDays = () => {
+    const currentDate = new Date(tempStartDate);
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const selectedDate = startDate ? new Date(startDate) : null;
+    if (selectedDate) selectedDate.setHours(0, 0, 0, 0);
+    
+    const days = [];
+    
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(<View key={`empty-start-${i}`} style={styles.calendarDay} />);
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      date.setHours(0, 0, 0, 0);
+      const isToday = date.getTime() === today.getTime();
+      const isSelected = selectedDate && date.getTime() === selectedDate.getTime();
+      const isPast = date < today;
+      
+      days.push(
+        <Pressable
+          key={`start-${day}`}
+          style={[
+            styles.calendarDay,
+            isToday && styles.calendarDayToday,
+            isSelected && styles.calendarDaySelected,
+            isPast && styles.calendarDayPast,
+          ]}
+          onPress={() => {
+            if (!isPast) {
+              setStartDate(formatDateForInput(date));
+              setTempStartDate(date);
+            }
+          }}
+          disabled={isPast}
+        >
+          <Text style={[
+            styles.calendarDayText,
+            isToday && styles.calendarDayTextToday,
+            isSelected && styles.calendarDayTextSelected,
+            isPast && styles.calendarDayTextPast,
+          ]}>
+            {day}
+          </Text>
+        </Pressable>
+      );
+    }
+    
+    return days;
+  };
+
+  // Render calendar days for end date
+  const renderEndCalendarDays = () => {
+    const currentDate = new Date(tempEndDate);
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const minDate = startDate ? new Date(startDate) : today;
+    minDate.setHours(0, 0, 0, 0);
+    
+    const selectedDate = endDate ? new Date(endDate) : null;
+    if (selectedDate) selectedDate.setHours(0, 0, 0, 0);
+    
+    const days = [];
+    
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(<View key={`empty-end-${i}`} style={styles.calendarDay} />);
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      date.setHours(0, 0, 0, 0);
+      const isToday = date.getTime() === today.getTime();
+      const isSelected = selectedDate && date.getTime() === selectedDate.getTime();
+      const isBeforeMin = date < minDate;
+      
+      days.push(
+        <Pressable
+          key={`end-${day}`}
+          style={[
+            styles.calendarDay,
+            isToday && styles.calendarDayToday,
+            isSelected && styles.calendarDaySelected,
+            isBeforeMin && styles.calendarDayPast,
+          ]}
+          onPress={() => {
+            if (!isBeforeMin) {
+              setEndDate(formatDateForInput(date));
+              setTempEndDate(date);
+            }
+          }}
+          disabled={isBeforeMin}
+        >
+          <Text style={[
+            styles.calendarDayText,
+            isToday && styles.calendarDayTextToday,
+            isSelected && styles.calendarDayTextSelected,
+            isBeforeMin && styles.calendarDayTextPast,
+          ]}>
+            {day}
+          </Text>
+        </Pressable>
+      );
+    }
+    
+    return days;
   };
 
   const handleCloseModal = () => {
@@ -85,7 +294,10 @@ export default function ProjectsScreen() {
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return dateString;
-      return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
     } catch {
       return dateString;
     }
@@ -166,6 +378,27 @@ export default function ProjectsScreen() {
         projectData,
       })).unwrap();
 
+      // Add selected members to the project
+      if (selectedMembers.length > 0) {
+        const memberPromises = selectedMembers.map(username =>
+          dispatch(addMemberToProject({
+            token,
+            memberData: {
+              projectName: projectName.trim(),
+              memberName: username,
+            },
+          })).unwrap()
+        );
+
+        try {
+          await Promise.all(memberPromises);
+          console.log('All members added successfully');
+        } catch (memberError) {
+          console.error('Some members failed to add:', memberError);
+          // Continue even if some members fail to add
+        }
+      }
+
       resetForm();
       setShowCreateModal(false);
 
@@ -175,7 +408,7 @@ export default function ProjectsScreen() {
       Toast.show({
         type: 'success',
         text1: 'Project Created',
-        text2: `"${projectName.trim()}" has been created successfully`,
+        text2: `"${projectName.trim()}" has been created successfully${selectedMembers.length > 0 ? ` with ${selectedMembers.length} member(s)` : ''}`,
         position: 'top',
         visibilityTime: 3000,
         topOffset: 60,
@@ -339,32 +572,21 @@ export default function ProjectsScreen() {
       {/* Create New Project Modal */}
       <Modal
         visible={showCreateModal}
-        animationType="fade"
+        animationType="slide"
         transparent={true}
         onRequestClose={handleCloseModal}
-        statusBarTranslucent={true}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            {/* Header */}
             <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderContent}>
-                <Text style={styles.modalTitle}>Create New Project</Text>
-                <Text style={styles.modalSubtitle}>Add a new project with team members and budget details</Text>
-              </View>
-              <Pressable style={styles.closeButton} onPress={handleCloseModal}>
-                <Ionicons name="close-outline" size={24} color="#6B7280" />
+              <Text style={styles.modalTitle}>Create New Project</Text>
+              <Pressable onPress={handleCloseModal}>
+                <Ionicons name="close" size={24} color="#6B7280" />
               </Pressable>
             </View>
-
-            {/* Content */}
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={true}>
-              {/* Project Name */}
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.formGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Project Name</Text>
-                  <Text style={styles.requiredAsterisk}> *</Text>
-                </View>
+                <Text style={styles.label}>Project Name *</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Enter project name"
@@ -373,13 +595,11 @@ export default function ProjectsScreen() {
                   onChangeText={setProjectName}
                 />
               </View>
-
-              {/* Description */}
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Description</Text>
                 <TextInput
                   style={styles.textArea}
-                  placeholder="Enter project description"
+                  placeholder="Enter project description (optional)"
                   placeholderTextColor="#9CA3AF"
                   value={description}
                   onChangeText={setDescription}
@@ -388,42 +608,144 @@ export default function ProjectsScreen() {
                   textAlignVertical="top"
                 />
               </View>
-
-
-              {/* Start Date & End Date Row */}
-              <View style={styles.formRow}>
-                <View style={[styles.formGroupHalf, { marginRight: 12 }]}>
-                  <Text style={styles.label}>Start Date</Text>
-                  <View style={styles.dateInput}>
-                    <Ionicons name="calendar-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-                    <TextInput
-                      style={styles.dateInputText}
-                      placeholder="Pick a date"
-                      placeholderTextColor="#9CA3AF"
-                      value={startDate}
-                      onChangeText={setStartDate}
-                    />
-                  </View>
-                </View>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.label}>End Date</Text>
-                  <View style={styles.dateInput}>
-                    <Ionicons name="calendar-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-                    <TextInput
-                      style={styles.dateInputText}
-                      placeholder="Pick a date"
-                      placeholderTextColor="#9CA3AF"
-                      value={endDate}
-                      onChangeText={setEndDate}
-                    />
-                  </View>
-                </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Start Date</Text>
+                <Pressable style={styles.dateInput} onPress={openStartDatePicker}>
+                  <Ionicons name="calendar-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                  <Text style={[styles.dateInputText, !startDate && styles.dateInputPlaceholder]}>
+                    {startDate || 'Select start date (optional)'}
+                  </Text>
+                  {startDate && (
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setStartDate('');
+                      }}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                      style={{ marginLeft: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                    </Pressable>
+                  )}
+                </Pressable>
+              </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>End Date</Text>
+                <Pressable style={styles.dateInput} onPress={openEndDatePicker}>
+                  <Ionicons name="calendar-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                  <Text style={[styles.dateInputText, !endDate && styles.dateInputPlaceholder]}>
+                    {endDate || 'Select end date (optional)'}
+                  </Text>
+                  {endDate && (
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setEndDate('');
+                      }}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                      style={{ marginLeft: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                    </Pressable>
+                  )}
+                </Pressable>
               </View>
 
-
-              {/* Action Buttons */}
+              {/* Add Members Section */}
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Add Team Members</Text>
+                <View style={styles.memberSearchContainer}>
+                  <Ionicons name="search-outline" size={16} color="#9CA3AF" />
+                  <TextInput
+                    style={styles.memberSearchInput}
+                    placeholder="Search members..."
+                    placeholderTextColor="#9CA3AF"
+                    value={memberSearchQuery}
+                    onChangeText={setMemberSearchQuery}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {memberSearchQuery.length > 0 && (
+                    <Pressable
+                      onPress={() => setMemberSearchQuery('')}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    >
+                      <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                    </Pressable>
+                  )}
+                </View>
+                <ScrollView style={styles.memberList} nestedScrollEnabled>
+                  {availableUsersForSelection.length === 0 ? (
+                    <View style={styles.emptyMemberList}>
+                      <Text style={styles.emptyMemberText}>
+                        {memberSearchQuery ? 'No users found' : 'No users available'}
+                      </Text>
+                    </View>
+                  ) : (
+                    availableUsersForSelection.map((user) => {
+                      const isSelected = selectedMembers.includes(user.username);
+                      const initials = (user.fullName || user.username || 'U')
+                        .split(' ')
+                        .map(n => n[0])
+                        .join('')
+                        .substring(0, 2)
+                        .toUpperCase();
+                      
+                      return (
+                        <Pressable
+                          key={user.id}
+                          style={[
+                            styles.memberItem,
+                            isSelected && styles.memberItemSelected
+                          ]}
+                          onPress={() => toggleMemberSelection(user.username)}
+                        >
+                          <View style={styles.memberItemLeft}>
+                            <View style={[
+                              styles.memberAvatar,
+                              isSelected && styles.memberAvatarSelected
+                            ]}>
+                              <Text style={[
+                                styles.memberAvatarText,
+                                isSelected && styles.memberAvatarTextSelected
+                              ]}>
+                                {initials}
+                              </Text>
+                            </View>
+                            <View style={styles.memberInfo}>
+                              <Text style={[
+                                styles.memberName,
+                                isSelected && styles.memberNameSelected
+                              ]}>
+                                {user.fullName || user.username}
+                              </Text>
+                              {user.email && (
+                                <Text style={styles.memberEmail}>{user.email}</Text>
+                              )}
+                            </View>
+                          </View>
+                          {isSelected && (
+                            <Ionicons name="checkmark-circle" size={24} color="#2563EB" />
+                          )}
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </ScrollView>
+                {selectedMembers.length > 0 && (
+                  <View style={styles.selectedMembersContainer}>
+                    <Text style={styles.selectedMembersLabel}>
+                      {selectedMembers.length} {selectedMembers.length === 1 ? 'member' : 'members'} selected
+                    </Text>
+                  </View>
+                )}
+              </View>
               <View style={styles.modalActions}>
-                <Pressable style={styles.cancelButton} onPress={handleCloseModal}>
+                <Pressable 
+                  style={styles.cancelButton}
+                  onPress={handleCloseModal}
+                  disabled={loading}
+                >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </Pressable>
                 <Pressable 
@@ -439,6 +761,156 @@ export default function ProjectsScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* Start Date Picker Modal */}
+      <Modal
+        visible={showStartDatePicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeStartDatePicker}
+      >
+        <Pressable 
+          style={styles.datePickerOverlay}
+          onPress={closeStartDatePicker}
+        >
+          <Pressable style={styles.datePickerContent} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.datePickerTitle}>Select Start Date</Text>
+            
+            <View style={styles.calendarContainer}>
+              <View style={styles.calendarHeader}>
+                <Pressable 
+                  style={styles.calendarNavButton}
+                  onPress={() => {
+                    const current = new Date(tempStartDate);
+                    current.setMonth(current.getMonth() - 1);
+                    setTempStartDate(current);
+                  }}
+                >
+                  <Ionicons name="chevron-back" size={20} color="#2563EB" />
+                </Pressable>
+                <Text style={styles.calendarMonthText}>
+                  {tempStartDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </Text>
+                <Pressable 
+                  style={styles.calendarNavButton}
+                  onPress={() => {
+                    const current = new Date(tempStartDate);
+                    current.setMonth(current.getMonth() + 1);
+                    setTempStartDate(current);
+                  }}
+                >
+                  <Ionicons name="chevron-forward" size={20} color="#2563EB" />
+                </Pressable>
+              </View>
+              
+              <View style={styles.calendarDayNames}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <Text key={day} style={styles.calendarDayName}>{day}</Text>
+                ))}
+              </View>
+              
+              <View style={styles.calendarGrid}>
+                {renderStartCalendarDays()}
+              </View>
+            </View>
+            
+            <View style={styles.datePickerButtons}>
+              <Pressable 
+                style={styles.datePickerButton}
+                onPress={closeStartDatePicker}
+              >
+                <Text style={styles.datePickerButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable 
+                style={[styles.datePickerButton, styles.datePickerButtonPrimary]}
+                onPress={() => {
+                  if (tempStartDate) {
+                    setStartDate(formatDateForInput(tempStartDate));
+                  }
+                  closeStartDatePicker();
+                }}
+              >
+                <Text style={styles.datePickerButtonTextPrimary}>Confirm</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* End Date Picker Modal */}
+      <Modal
+        visible={showEndDatePicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeEndDatePicker}
+      >
+        <Pressable 
+          style={styles.datePickerOverlay}
+          onPress={closeEndDatePicker}
+        >
+          <Pressable style={styles.datePickerContent} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.datePickerTitle}>Select End Date</Text>
+            
+            <View style={styles.calendarContainer}>
+              <View style={styles.calendarHeader}>
+                <Pressable 
+                  style={styles.calendarNavButton}
+                  onPress={() => {
+                    const current = new Date(tempEndDate);
+                    current.setMonth(current.getMonth() - 1);
+                    setTempEndDate(current);
+                  }}
+                >
+                  <Ionicons name="chevron-back" size={20} color="#2563EB" />
+                </Pressable>
+                <Text style={styles.calendarMonthText}>
+                  {tempEndDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </Text>
+                <Pressable 
+                  style={styles.calendarNavButton}
+                  onPress={() => {
+                    const current = new Date(tempEndDate);
+                    current.setMonth(current.getMonth() + 1);
+                    setTempEndDate(current);
+                  }}
+                >
+                  <Ionicons name="chevron-forward" size={20} color="#2563EB" />
+                </Pressable>
+              </View>
+              
+              <View style={styles.calendarDayNames}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <Text key={day} style={styles.calendarDayName}>{day}</Text>
+                ))}
+              </View>
+              
+              <View style={styles.calendarGrid}>
+                {renderEndCalendarDays()}
+              </View>
+            </View>
+            
+            <View style={styles.datePickerButtons}>
+              <Pressable 
+                style={styles.datePickerButton}
+                onPress={closeEndDatePicker}
+              >
+                <Text style={styles.datePickerButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable 
+                style={[styles.datePickerButton, styles.datePickerButtonPrimary]}
+                onPress={() => {
+                  if (tempEndDate) {
+                    setEndDate(formatDateForInput(tempEndDate));
+                  }
+                  closeEndDatePicker();
+                }}
+              >
+                <Text style={styles.datePickerButtonTextPrimary}>Confirm</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -686,22 +1158,18 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
   },
   modalContainer: {
-    width: '100%',
-    maxWidth: 600,
-    maxHeight: '90%',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    overflow: 'hidden',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
         shadowRadius: 8,
       },
       android: {
@@ -710,74 +1178,37 @@ const styles = StyleSheet.create({
     }),
   },
   modalHeader: {
-    position: 'relative',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
-    paddingTop: 24,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    alignItems: 'center',
-  },
-  modalHeaderContent: {
-    alignItems: 'center',
-    width: '100%',
-    paddingRight: 32,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    padding: 4,
-    zIndex: 1,
   },
   modalContent: {
-    flex: 1,
     padding: 20,
   },
   formGroup: {
     marginBottom: 20,
   },
-  formRow: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  formGroupHalf: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   label: {
     fontSize: 14,
     fontWeight: '600',
     color: '#111827',
-  },
-  requiredAsterisk: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#EF4444',
+    marginBottom: 8,
   },
   textInput: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#111827',
   },
@@ -785,30 +1216,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#111827',
     minHeight: 100,
-  },
-  dropdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  dropdownText: {
-    fontSize: 14,
-    color: '#111827',
-  },
-  dropdownPlaceholder: {
-    color: '#9CA3AF',
   },
   dateInput: {
     flexDirection: 'row',
@@ -816,9 +1229,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   dateInputText: {
     flex: 1,
@@ -891,18 +1304,18 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
+    gap: 12,
   },
   cancelButton: {
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginRight: 12,
+    minWidth: 100,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 100,
   },
   cancelButtonText: {
     fontSize: 14,
@@ -911,12 +1324,12 @@ const styles = StyleSheet.create({
   },
   createButton: {
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
     backgroundColor: '#2563EB',
+    minWidth: 140,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 140,
   },
   createButtonDisabled: {
     backgroundColor: '#9CA3AF',
@@ -925,6 +1338,234 @@ const styles = StyleSheet.create({
   createButtonText: {
     fontSize: 14,
     fontWeight: '600',
+    color: '#fff',
+  },
+  dateInputPlaceholder: {
+    color: '#9CA3AF',
+  },
+  // Member Selection Styles
+  memberSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 8,
+  },
+  memberSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+    padding: 0,
+  },
+  memberList: {
+    maxHeight: 200,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  emptyMemberList: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyMemberText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  memberItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  memberItemSelected: {
+    backgroundColor: '#F0F9FF',
+  },
+  memberItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  memberAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  memberAvatarSelected: {
+    backgroundColor: '#2563EB',
+  },
+  memberAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  memberAvatarTextSelected: {
+    color: '#fff',
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  memberNameSelected: {
+    color: '#2563EB',
+  },
+  memberEmail: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  selectedMembersContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  selectedMembersLabel: {
+    fontSize: 12,
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  // Date Picker Modal Styles
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  datePickerContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  datePickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  calendarContainer: {
+    marginBottom: 20,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  calendarNavButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  calendarMonthText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  calendarDayNames: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  calendarDayName: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    paddingVertical: 8,
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calendarDay: {
+    width: '14.28%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  calendarDayToday: {
+    backgroundColor: '#E0ECFF',
+  },
+  calendarDaySelected: {
+    backgroundColor: '#2563EB',
+  },
+  calendarDayPast: {
+    opacity: 0.3,
+  },
+  calendarDayText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+  },
+  calendarDayTextToday: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  calendarDayTextSelected: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  calendarDayTextPast: {
+    color: '#9CA3AF',
+  },
+  datePickerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  datePickerButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePickerButtonPrimary: {
+    backgroundColor: '#2563EB',
+  },
+  datePickerButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  datePickerButtonTextPrimary: {
     color: '#fff',
   },
 });

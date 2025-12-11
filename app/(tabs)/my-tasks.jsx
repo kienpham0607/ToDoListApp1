@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, TouchableOpacity } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import Toast from 'react-native-toast-message';
@@ -72,16 +73,16 @@ export default function MyTasksScreen() {
   useEffect(() => {
     if (tasksError) {
       console.log('MyTasks: Displaying error to user:', tasksError);
-      
+
       // Extract clean error message and details
       let errorMessage = 'Đã xảy ra lỗi';
       let errorDetails = 'Vui lòng thử lại sau';
-      
+
       // Handle object error format
       if (typeof tasksError === 'object' && tasksError !== null) {
         errorMessage = String(tasksError.message || errorMessage);
         errorDetails = String(tasksError.details || errorDetails);
-        
+
         // If message contains JSON string, try to parse it
         if (errorMessage.includes('{') && errorMessage.includes('}')) {
           try {
@@ -93,16 +94,16 @@ export default function MyTasksScreen() {
             errorMessage = errorMessage.replace(/^.*?"message"\s*:\s*"([^"]+)".*$/i, '$1');
           }
         }
-      } 
+      }
       // Handle string error format
       else if (typeof tasksError === 'string') {
         errorMessage = tasksError;
       }
-      
+
       // Clean up error messages - ensure user-friendly format
       errorMessage = errorMessage.trim() || 'Đã xảy ra lỗi';
       errorDetails = errorDetails.trim() || 'Vui lòng thử lại sau';
-      
+
       // Always show error toast - ensure it's visible and user-friendly (top right corner)
       Toast.show({
         type: 'error',
@@ -129,7 +130,7 @@ export default function MyTasksScreen() {
       } else if (task.progress > 0) {
         status = 'In Progress';
       }
-      
+
       // Map backend priority (low, medium, high) to UI format (Low, Medium, High)
       const priorityMap = {
         'low': 'Low',
@@ -137,7 +138,7 @@ export default function MyTasksScreen() {
         'high': 'High',
       };
       const displayPriority = priorityMap[task.priority] || 'Medium';
-      
+
       return {
         id: task.id, // Keep as number for API calls
         idString: String(task.id), // String version for React key
@@ -156,7 +157,7 @@ export default function MyTasksScreen() {
   // Handle delete task - show confirmation dialog
   const handleDeleteTask = useCallback((taskId, taskTitle) => {
     console.log('handleDeleteTask called:', { taskId, taskTitle, hasToken: !!token });
-    
+
     if (!token) {
       Toast.show({
         type: 'error',
@@ -171,7 +172,7 @@ export default function MyTasksScreen() {
 
     // Ensure taskId is a number
     const id = typeof taskId === 'string' ? parseInt(taskId, 10) : taskId;
-    
+
     if (!id || isNaN(id)) {
       console.error('Invalid taskId:', taskId);
       Toast.show({
@@ -202,11 +203,11 @@ export default function MyTasksScreen() {
 
     // Get taskToDelete from ref first (most reliable), fallback to state
     const currentTask = taskToDeleteRef.current || taskToDelete;
-    
+
     if (!currentTask) {
-      console.error('Delete task: Missing taskToDelete', { 
-        fromRef: taskToDeleteRef.current, 
-        fromState: taskToDelete 
+      console.error('Delete task: Missing taskToDelete', {
+        fromRef: taskToDeleteRef.current,
+        fromState: taskToDelete
       });
       setShowDeleteConfirm(false);
       Toast.show({
@@ -222,7 +223,7 @@ export default function MyTasksScreen() {
 
     // Ensure taskId is a number
     const taskId = typeof currentTask.id === 'string' ? parseInt(currentTask.id, 10) : currentTask.id;
-    
+
     if (!taskId || isNaN(taskId)) {
       console.error('Delete task: Invalid taskId', currentTask.id);
       Toast.show({
@@ -244,16 +245,16 @@ export default function MyTasksScreen() {
 
     try {
       await dispatch(deleteExistingTask({ token, taskId })).unwrap();
-      
+
       // Close modal and clear state only after successful deletion
       setShowDeleteConfirm(false);
       setTaskToDelete(null);
       taskToDeleteRef.current = null; // Also clear ref
-      
+
       // Refresh tasks list after successful deletion
       console.log('Delete successful, refreshing tasks...');
       await dispatch(fetchTasks({ token, offset: 0, limit: 100 }));
-      
+
       Toast.show({
         type: 'success',
         text1: 'Task Deleted',
@@ -264,14 +265,14 @@ export default function MyTasksScreen() {
       });
     } catch (error) {
       console.error('Failed to delete task:', error);
-      
+
       // Re-open modal if error occurs (so user can try again)
       setShowDeleteConfirm(true);
-      
+
       // Extract error message and details - ensure clean user-friendly messages
       let errorMessage = 'Không thể xóa task';
       let errorDetails = 'Vui lòng thử lại sau';
-      
+
       // Handle Redux rejected action error (unwrap() throws the payload)
       if (error?.payload) {
         if (typeof error.payload === 'object' && error.payload !== null) {
@@ -280,12 +281,12 @@ export default function MyTasksScreen() {
         } else if (typeof error.payload === 'string') {
           errorMessage = error.payload;
         }
-      } 
+      }
       // Handle direct error object
       else if (error && typeof error === 'object') {
         errorMessage = String(error.message || errorMessage);
         errorDetails = String(error.details || errorDetails);
-        
+
         // If message contains JSON, try to parse it
         if (errorMessage.includes('{') && errorMessage.includes('}')) {
           try {
@@ -297,17 +298,17 @@ export default function MyTasksScreen() {
             errorMessage = errorMessage.replace(/^.*?\{/, '').replace(/\}.*$/, '').trim();
           }
         }
-      } 
+      }
       // Handle string error
       else if (typeof error === 'string') {
         errorMessage = error;
       }
-      
+
       // Clean up error messages - remove any JSON artifacts
       errorMessage = errorMessage.replace(/^Failed to delete task:\s*/i, '');
       errorMessage = errorMessage.replace(/^.*?"message"\s*:\s*"([^"]+)".*$/i, '$1');
       errorMessage = errorMessage.trim() || 'Không thể xóa task';
-      
+
       // ALWAYS show error toast - ensure user sees it clearly (top right corner)
       console.log('MyTasks: Showing delete task error to user:', errorMessage, errorDetails);
       Toast.show({
@@ -350,7 +351,7 @@ export default function MyTasksScreen() {
     console.log('handleEditTask called with token:', token ? 'exists' : 'null');
     console.log('handleEditTask called with task:', JSON.stringify(task, null, 2));
     console.log('handleEditTask task.originalTask:', JSON.stringify(task.originalTask, null, 2));
-    
+
     // Check if token is a valid string (not boolean)
     if (!token || typeof token !== 'string' || token.trim() === '') {
       console.error('handleEditTask: No valid token found!', { token, tokenType: typeof token });
@@ -366,7 +367,7 @@ export default function MyTasksScreen() {
     }
 
     console.log('Opening edit modal for task:', task);
-    
+
     // Map priority from backend format to UI format
     const priorityMap = {
       'low': 'Low',
@@ -374,40 +375,40 @@ export default function MyTasksScreen() {
       'high': 'High',
     };
     const displayPriority = priorityMap[task.originalTask?.priority] || 'Medium';
-    
+
     // Get dueDate from multiple possible sources
     const dueDate = task.originalTask?.dueDate || task.originalTask?.due_date || task.originalTask?.due || task.due || null;
     console.log('handleEditTask: Extracted dueDate:', dueDate);
-    
+
     setTaskToEdit(task);
     taskToEditRef.current = task; // Also store in ref
-    
+
     // Set form values - ensure title is always a string
     const taskTitle = task.title || task.originalTask?.name || '';
     const taskDescription = task.description || '';
     const taskDueDate = dueDate || '';
-    
-    console.log('handleEditTask: Setting form values:', { 
-      taskTitle, 
+
+    console.log('handleEditTask: Setting form values:', {
+      taskTitle,
       taskDescription,
       displayPriority,
       taskDueDate
     });
-    
+
     // Set both state and refs
     const titleValue = String(taskTitle);
     setEditTitle(titleValue);
     editTitleRef.current = titleValue;
-    
+
     setEditDescription(taskDescription);
     editDescriptionRef.current = taskDescription;
-    
+
     setEditPriority(displayPriority);
     editPriorityRef.current = displayPriority;
-    
+
     setEditDue(taskDueDate);
     editDueRef.current = taskDueDate;
-    
+
     if (dueDate) {
       try {
         const dateObj = new Date(dueDate);
@@ -429,21 +430,21 @@ export default function MyTasksScreen() {
   const handleUpdateTask = useCallback(async () => {
     // Check if token is a valid string (not boolean)
     const currentToken = typeof token === 'string' && token.trim() !== '' ? token : null;
-    
+
     // Get taskToEdit from ref first (most reliable), fallback to state
     const currentTaskToEdit = taskToEditRef.current || taskToEdit;
-    
+
     // Get form values from refs first (most reliable), fallback to state
     const currentEditTitle = editTitleRef.current || editTitle || '';
     const currentEditDescription = editDescriptionRef.current || editDescription || '';
     const currentEditPriority = editPriorityRef.current || editPriority || 'Medium';
     const currentEditDue = editDueRef.current || editDue || '';
     const currentSelectedEditCalendarDate = selectedEditCalendarDateRef.current || selectedEditCalendarDate;
-    
+
     console.log('handleUpdateTask called with token:', currentToken ? 'exists' : 'null', { tokenType: typeof token, token });
-    console.log('handleUpdateTask called with taskToEdit:', currentTaskToEdit ? 'exists' : 'null', { 
-      fromRef: taskToEditRef.current, 
-      fromState: taskToEdit 
+    console.log('handleUpdateTask called with taskToEdit:', currentTaskToEdit ? 'exists' : 'null', {
+      fromRef: taskToEditRef.current,
+      fromState: taskToEdit
     });
     console.log('handleUpdateTask form values from refs:', {
       editTitle: editTitleRef.current,
@@ -459,10 +460,10 @@ export default function MyTasksScreen() {
       editDue,
       selectedEditCalendarDate
     });
-    
+
     if (!currentToken || !currentTaskToEdit) {
-      console.error('handleUpdateTask: Missing token or taskToEdit!', { 
-        token: !!currentToken, 
+      console.error('handleUpdateTask: Missing token or taskToEdit!', {
+        token: !!currentToken,
         tokenType: typeof token,
         taskToEdit: !!currentTaskToEdit,
         fromRef: !!taskToEditRef.current,
@@ -481,20 +482,20 @@ export default function MyTasksScreen() {
 
     // Validate inputs - use values from refs (most reliable)
     console.log('handleUpdateTask: currentEditTitle value:', currentEditTitle, 'type:', typeof currentEditTitle);
-    
+
     // Đảm bảo editTitle luôn là string, không bao giờ null/undefined
     const titleValue = currentEditTitle != null ? String(currentEditTitle) : '';
     const trimmedTitle = titleValue.trim();
-    
+
     console.log('handleUpdateTask: titleValue:', titleValue, 'trimmedTitle:', trimmedTitle, 'length:', trimmedTitle.length);
-    
+
     if (!trimmedTitle || trimmedTitle.length === 0) {
-      console.error('handleUpdateTask: Title validation failed!', { 
+      console.error('handleUpdateTask: Title validation failed!', {
         currentEditTitle,
         editTitleRef: editTitleRef.current,
         editTitleState: editTitle,
         titleValue,
-        trimmedTitle, 
+        trimmedTitle,
         editTitleType: typeof currentEditTitle,
         editTitleIsNull: currentEditTitle == null,
         editTitleIsUndefined: currentEditTitle === undefined
@@ -630,15 +631,15 @@ export default function MyTasksScreen() {
     console.log('Toggling task completion:', { taskId, newProgress });
 
     try {
-      await dispatch(updateExistingTask({ 
-        token, 
-        taskId, 
-        taskData: { progress: newProgress } 
+      await dispatch(updateExistingTask({
+        token,
+        taskId,
+        taskData: { progress: newProgress }
       })).unwrap();
-      
+
       // Refresh tasks list after update
       await dispatch(fetchTasks({ token, offset: 0, limit: 100 }));
-      
+
       Toast.show({
         type: 'success',
         text1: newProgress === 100 ? 'Task Completed' : 'Task Reopened',
@@ -649,10 +650,10 @@ export default function MyTasksScreen() {
       });
     } catch (error) {
       console.error('Failed to toggle task completion:', error);
-      
+
       let errorMessage = 'Không thể cập nhật task';
       let errorDetails = 'Vui lòng thử lại sau';
-      
+
       if (error?.payload) {
         if (typeof error.payload === 'object' && error.payload !== null) {
           errorMessage = String(error.payload.message || errorMessage);
@@ -664,7 +665,7 @@ export default function MyTasksScreen() {
         errorMessage = error.message;
         errorDetails = error.details || errorDetails;
       }
-      
+
       Toast.show({
         type: 'error',
         text1: errorMessage,
@@ -697,7 +698,7 @@ export default function MyTasksScreen() {
   const [taskToDelete, setTaskToDelete] = useState(null);
   // Use ref to store taskToDelete to avoid closure issues
   const taskToDeleteRef = useRef(null);
-  
+
   // Edit task modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
@@ -745,70 +746,30 @@ export default function MyTasksScreen() {
 
   const countBy = (s) => tasks.filter(t => t.status === s).length;
 
-  // Render calendar days
-  const renderCalendarDays = () => {
-    const currentDate = new Date(selectedCalendarDate || new Date());
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    
-    // Get first day of month and number of days
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
-    
-    // Get today's date for comparison
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    // Get selected date for highlighting
-    const selectedDate = selectedCalendarDate ? new Date(selectedCalendarDate) : null;
-    if (selectedDate) selectedDate.setHours(0, 0, 0, 0);
-    
-    const days = [];
-    
-    // Empty cells for days before month starts
-    for (let i = 0; i < startingDayOfWeek; i++) {
-      days.push(<View key={`empty-${i}`} style={styles.calendarDay} />);
+  const onDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
     }
-    
-    // Days of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      date.setHours(0, 0, 0, 0);
-      const isToday = date.getTime() === today.getTime();
-      const isSelected = selectedDate && date.getTime() === selectedDate.getTime();
-      const isPast = date < today;
-      
-      days.push(
-        <Pressable
-          key={day}
-          style={[
-            styles.calendarDay,
-            isToday && styles.calendarDayToday,
-            isSelected && styles.calendarDaySelected,
-            isPast && styles.calendarDayPast,
-          ]}
-          onPress={() => {
-            if (!isPast) {
-              setSelectedCalendarDate(new Date(year, month, day));
-            }
-          }}
-          disabled={isPast}
-        >
-          <Text style={[
-            styles.calendarDayText,
-            isToday && styles.calendarDayTextToday,
-            isSelected && styles.calendarDayTextSelected,
-            isPast && styles.calendarDayTextPast,
-          ]}>
-            {day}
-          </Text>
-        </Pressable>
-      );
+    if (selectedDate) {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      setNewDue(`${year}-${month}-${day}`);
     }
-    
-    return days;
+  };
+
+  const onEditDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowEditDatePicker(false);
+    }
+    if (selectedDate) {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      setEditDue(dateStr);
+      editDueRef.current = dateStr;
+    }
   };
 
   return (
@@ -823,7 +784,7 @@ export default function MyTasksScreen() {
         {/* Filters Section */}
         <View style={styles.sectionCard}>
           {(showCategoryFilterDropdown || showPriorityFilterDropdown) && (
-            <Pressable 
+            <Pressable
               style={styles.dropdownOverlay}
               onPress={() => {
                 setShowCategoryFilterDropdown(false);
@@ -834,7 +795,7 @@ export default function MyTasksScreen() {
           <View style={styles.filterRow}>
             {/* Category Filter */}
             <View style={styles.filterChipWrapper}>
-              <Pressable 
+              <Pressable
                 style={styles.filterChip}
                 onPress={() => {
                   setShowCategoryFilterDropdown(!showCategoryFilterDropdown);
@@ -875,7 +836,7 @@ export default function MyTasksScreen() {
 
             {/* Priority Filter */}
             <View style={styles.filterChipWrapper}>
-              <Pressable 
+              <Pressable
                 style={styles.filterChip}
                 onPress={() => {
                   setShowPriorityFilterDropdown(!showPriorityFilterDropdown);
@@ -949,9 +910,9 @@ export default function MyTasksScreen() {
 
         {/* Tabs */}
         <View style={styles.tabsRow}>
-          {['All','To Do','In Progress','Completed'].map(name => (
-            <Pressable key={name} onPress={() => setTab(name)} style={[styles.tabPill, tab===name && styles.tabPillActive]}>
-              <Text style={[styles.tabText, tab===name && styles.tabTextActive]}>{name}{name==='All' ? ` (${tasks.length})` : ''}</Text>
+          {['All', 'To Do', 'In Progress', 'Completed'].map(name => (
+            <Pressable key={name} onPress={() => setTab(name)} style={[styles.tabPill, tab === name && styles.tabPillActive]}>
+              <Text style={[styles.tabText, tab === name && styles.tabTextActive]}>{name}{name === 'All' ? ` (${tasks.length})` : ''}</Text>
             </Pressable>
           ))}
         </View>
@@ -971,88 +932,88 @@ export default function MyTasksScreen() {
             </View>
           ) : (
             filtered.map(t => (
-            <View key={t.idString} style={styles.taskCard}>
-              <View style={styles.taskHeader}>
-                <View style={styles.taskTitleRow}>
-                  <Pressable
-                    onPress={() => {
-                      console.log('Checkbox pressed for task:', { id: t.id, title: t.title, currentProgress: t.progress });
-                      handleToggleComplete(t.id, t.progress === 100 ? 0 : 100);
-                    }}
-                    style={styles.checkboxContainer}
-                  >
-                    {t.progress === 100 ? (
-                      <View style={styles.checkboxChecked}>
-                        <Ionicons name="checkmark" size={14} color="#fff" />
-                      </View>
-                    ) : (
-                      <View style={styles.checkbox} />
-                    )}
-                  </Pressable>
-                  <Text style={[styles.taskTitle, t.progress === 100 && styles.taskTitleCompleted]}>{t.title}</Text>
+              <View key={t.idString} style={styles.taskCard}>
+                <View style={styles.taskHeader}>
+                  <View style={styles.taskTitleRow}>
+                    <Pressable
+                      onPress={() => {
+                        console.log('Checkbox pressed for task:', { id: t.id, title: t.title, currentProgress: t.progress });
+                        handleToggleComplete(t.id, t.progress === 100 ? 0 : 100);
+                      }}
+                      style={styles.checkboxContainer}
+                    >
+                      {t.progress === 100 ? (
+                        <View style={styles.checkboxChecked}>
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                        </View>
+                      ) : (
+                        <View style={styles.checkbox} />
+                      )}
+                    </Pressable>
+                    <Text style={[styles.taskTitle, t.progress === 100 && styles.taskTitleCompleted]}>{t.title}</Text>
+                  </View>
+                  <View style={styles.taskActions}>
+                    <Pressable
+                      onPress={() => {
+                        console.log('Edit button pressed:', { id: t.id, title: t.title });
+                        handleEditTask(t);
+                      }}
+                      style={styles.editButton}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="pencil-outline" size={18} color="#2563EB" />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        console.log('Delete button pressed:', { id: t.id, title: t.title });
+                        handleDeleteTask(t.id, t.title);
+                      }}
+                      style={styles.deleteButton}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#9AA3AE" />
+                    </Pressable>
+                  </View>
                 </View>
-                <View style={styles.taskActions}>
-                  <Pressable
-                    onPress={() => {
-                      console.log('Edit button pressed:', { id: t.id, title: t.title });
-                      handleEditTask(t);
-                    }}
-                    style={styles.editButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons name="pencil-outline" size={18} color="#2563EB" />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      console.log('Delete button pressed:', { id: t.id, title: t.title });
-                      handleDeleteTask(t.id, t.title);
-                    }}
-                    style={styles.deleteButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#9AA3AE" />
-                  </Pressable>
-                </View>
-              </View>
-              <Text style={styles.taskDesc}>{t.description}</Text>
-              <View style={styles.taskMetaRow}>
-                <View style={[styles.badge, styles[`priority_${t.priority}`]]}><Text style={[styles.badgeText, styles[`priorityText_${t.priority}`]]}>{t.priority}</Text></View>
-                <View style={[styles.badge, styles.badgeSoft]}><Ionicons name="pricetag" size={12} color="#4B5563" /><Text style={styles.badgeSoftText}>{t.category}</Text></View>
-                {(() => {
-                  // Always show due date badge if due date exists
-                  if (!t.due || (typeof t.due === 'string' && t.due.trim() === '')) {
-                    return null;
-                  }
-                  
-                  let displayDate = '';
-                  try {
-                    const date = new Date(t.due);
-                    if (!isNaN(date.getTime())) {
-                      const day = date.getDate();
-                      const month = date.toLocaleDateString('en-US', { month: 'short' });
-                      const year = date.getFullYear();
-                      displayDate = `${month} ${day}, ${year}`;
-                    } else {
+                <Text style={styles.taskDesc}>{t.description}</Text>
+                <View style={styles.taskMetaRow}>
+                  <View style={[styles.badge, styles[`priority_${t.priority}`]]}><Text style={[styles.badgeText, styles[`priorityText_${t.priority}`]]}>{t.priority}</Text></View>
+                  <View style={[styles.badge, styles.badgeSoft]}><Ionicons name="pricetag" size={12} color="#4B5563" /><Text style={styles.badgeSoftText}>{t.category}</Text></View>
+                  {(() => {
+                    // Always show due date badge if due date exists
+                    if (!t.due || (typeof t.due === 'string' && t.due.trim() === '')) {
+                      return null;
+                    }
+
+                    let displayDate = '';
+                    try {
+                      const date = new Date(t.due);
+                      if (!isNaN(date.getTime())) {
+                        const day = date.getDate();
+                        const month = date.toLocaleDateString('en-US', { month: 'short' });
+                        const year = date.getFullYear();
+                        displayDate = `${month} ${day}, ${year}`;
+                      } else {
+                        displayDate = String(t.due);
+                      }
+                    } catch (_e) {
                       displayDate = String(t.due);
                     }
-                  } catch (_e) {
-                    displayDate = String(t.due);
-                  }
-                  
-                  if (!displayDate) return null;
-                  
-                  const overdue = isOverdue(t.due);
-                  return (
-                    <View style={[styles.badge, overdue ? styles.badgeDanger : styles.badgeSoft]}>
-                      <Ionicons name="calendar" size={12} color={overdue ? '#DC2626' : '#4B5563'} />
-                      <Text style={[styles.badgeSoftText, overdue && { color: '#DC2626', fontWeight: '700' }]}>
-                        {displayDate}
-                      </Text>
-                    </View>
-                  );
-                })()}
+
+                    if (!displayDate) return null;
+
+                    const overdue = isOverdue(t.due);
+                    return (
+                      <View style={[styles.badge, overdue ? styles.badgeDanger : styles.badgeSoft]}>
+                        <Ionicons name="calendar" size={12} color={overdue ? '#DC2626' : '#4B5563'} />
+                        <Text style={[styles.badgeSoftText, overdue && { color: '#DC2626', fontWeight: '700' }]}>
+                          {displayDate}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+                </View>
               </View>
-            </View>
             ))
           )}
         </View>
@@ -1063,7 +1024,7 @@ export default function MyTasksScreen() {
         animationType="fade"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <Pressable 
+        <Pressable
           style={styles.modalOverlay}
           onPress={() => setShowAddModal(false)}
         >
@@ -1078,7 +1039,7 @@ export default function MyTasksScreen() {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.modalScroll} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
               <View style={{ gap: 12 }}>
                 {/* Title Input */}
                 <View>
@@ -1181,21 +1142,33 @@ export default function MyTasksScreen() {
                   <Text style={styles.inputLabel}>Due Date (Optional)</Text>
                   <Pressable
                     style={[styles.dateField, { zIndex: 1 }]}
-                    onPress={() => {
-                      // Initialize with current date or existing date
-                      if (newDue) {
-                        setSelectedCalendarDate(new Date(newDue));
-                      } else {
-                        setSelectedCalendarDate(new Date());
-                      }
-                      setShowDatePicker(true);
-                    }}
+                    onPress={() => setShowDatePicker(!showDatePicker)}
                   >
                     <Text style={[styles.datePlaceholder, newDue && { color: '#111827' }]}>
                       {newDue ? new Date(newDue).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'mm/dd/yyyy'}
                     </Text>
                     <Ionicons name="calendar-clear" size={16} color="#6B7280" />
                   </Pressable>
+                  {Platform.OS === 'ios' && showDatePicker && (
+                    <DateTimePicker
+                      value={newDue ? new Date(newDue) : new Date()}
+                      mode="date"
+                      display="spinner"
+                      onChange={onDateChange}
+                      style={styles.datePickerIOSInline}
+                      textColor="#000000"
+                      minimumDate={new Date()}
+                    />
+                  )}
+                  {Platform.OS === 'android' && showDatePicker && (
+                    <DateTimePicker
+                      value={newDue ? new Date(newDue) : new Date()}
+                      mode="date"
+                      display="default"
+                      onChange={onDateChange}
+                      minimumDate={new Date()}
+                    />
+                  )}
                 </View>
               </View>
             </ScrollView>
@@ -1328,7 +1301,7 @@ export default function MyTasksScreen() {
                     setNewCategory('Personal');
                     setNewDue('');
                     setTab('All');
-                    
+
                     // Show success toast (top right corner)
                     Toast.show({
                       type: 'success',
@@ -1340,11 +1313,11 @@ export default function MyTasksScreen() {
                     });
                   } catch (error) {
                     console.error('Failed to create task:', error);
-                    
+
                     // Extract error message and details - ensure clean user-friendly messages
                     let errorMessage = 'Không thể tạo task';
                     let errorDetails = 'Vui lòng thử lại sau';
-                    
+
                     // Handle Redux rejected action error (unwrap() throws the payload)
                     if (error?.payload) {
                       if (typeof error.payload === 'object' && error.payload !== null) {
@@ -1353,12 +1326,12 @@ export default function MyTasksScreen() {
                       } else if (typeof error.payload === 'string') {
                         errorMessage = error.payload;
                       }
-                    } 
+                    }
                     // Handle direct error object
                     else if (error && typeof error === 'object') {
                       errorMessage = String(error.message || errorMessage);
                       errorDetails = String(error.details || errorDetails);
-                      
+
                       // If message contains JSON, try to parse it
                       if (errorMessage.includes('{') && errorMessage.includes('}')) {
                         try {
@@ -1370,17 +1343,17 @@ export default function MyTasksScreen() {
                           errorMessage = errorMessage.replace(/^.*?\{/, '').replace(/\}.*$/, '').trim();
                         }
                       }
-                    } 
+                    }
                     // Handle string error
                     else if (typeof error === 'string') {
                       errorMessage = error;
                     }
-                    
+
                     // Clean up error messages - remove any JSON artifacts
                     errorMessage = errorMessage.replace(/^Failed to create task:\s*/i, '');
                     errorMessage = errorMessage.replace(/^.*?"message"\s*:\s*"([^"]+)".*$/i, '$1');
                     errorMessage = errorMessage.trim() || 'Không thể tạo task';
-                    
+
                     // ALWAYS show error toast - ensure user sees it clearly (top right corner)
                     console.log('MyTasks: Showing create task error to user:', errorMessage, errorDetails);
                     Toast.show({
@@ -1403,91 +1376,7 @@ export default function MyTasksScreen() {
         </Pressable>
       </Modal>
 
-      {/* Date Picker Modal */}
-      <Modal
-        visible={showDatePicker}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowDatePicker(false)}
-      >
-        <Pressable 
-          style={styles.modalOverlay}
-          onPress={() => setShowDatePicker(false)}
-        >
-          <Pressable style={styles.datePickerContent} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.datePickerTitle}>Select Due Date</Text>
-            
-            {/* Simple Calendar Grid */}
-            <View style={styles.calendarContainer}>
-              {/* Month/Year Header */}
-              <View style={styles.calendarHeader}>
-                <Pressable 
-                  style={styles.calendarNavButton}
-                  onPress={() => {
-                    const current = new Date(selectedCalendarDate || new Date());
-                    current.setMonth(current.getMonth() - 1);
-                    setSelectedCalendarDate(current);
-                  }}
-                >
-                  <Ionicons name="chevron-back" size={20} color="#2563EB" />
-                </Pressable>
-                <Text style={styles.calendarMonthText}>
-                  {new Date(selectedCalendarDate || new Date()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                </Text>
-                <Pressable 
-                  style={styles.calendarNavButton}
-                  onPress={() => {
-                    const current = new Date(selectedCalendarDate || new Date());
-                    current.setMonth(current.getMonth() + 1);
-                    setSelectedCalendarDate(current);
-                  }}
-                >
-                  <Ionicons name="chevron-forward" size={20} color="#2563EB" />
-                </Pressable>
-              </View>
-              
-              {/* Day Names */}
-              <View style={styles.calendarDayNames}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                  <Text key={day} style={styles.calendarDayName}>{day}</Text>
-                ))}
-              </View>
-              
-              {/* Calendar Grid */}
-              <View style={styles.calendarGrid}>
-                {renderCalendarDays()}
-              </View>
-            </View>
-            
-            <View style={styles.datePickerButtons}>
-              <Pressable 
-                style={styles.datePickerButton}
-                onPress={() => {
-                  setShowDatePicker(false);
-                  setSelectedCalendarDate(null);
-                }}
-              >
-                <Text style={styles.datePickerButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable 
-                style={[styles.datePickerButton, styles.datePickerButtonPrimary]}
-                onPress={() => {
-                  if (selectedCalendarDate) {
-                    const year = selectedCalendarDate.getFullYear();
-                    const month = String(selectedCalendarDate.getMonth() + 1).padStart(2, '0');
-                    const day = String(selectedCalendarDate.getDate()).padStart(2, '0');
-                    setNewDue(`${year}-${month}-${day}`);
-                  }
-                  setShowDatePicker(false);
-                  setSelectedCalendarDate(null);
-                }}
-              >
-                <Text style={styles.datePickerButtonTextPrimary}>Confirm</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+
 
       {/* Edit Task Modal */}
       <Modal
@@ -1496,7 +1385,7 @@ export default function MyTasksScreen() {
         animationType="fade"
         onRequestClose={closeEditModal}
       >
-        <Pressable 
+        <Pressable
           style={styles.modalOverlay}
           onPress={closeEditModal}
         >
@@ -1511,7 +1400,7 @@ export default function MyTasksScreen() {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.modalScroll} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
               <View style={styles.modalFieldsContainer}>
                 {/* Title Input */}
                 <View style={styles.modalFieldWrapper}>
@@ -1589,24 +1478,37 @@ export default function MyTasksScreen() {
                   <Text style={styles.inputLabel}>Due Date (Optional)</Text>
                   <Pressable
                     style={[styles.dateField, { zIndex: 1 }]}
-                    onPress={() => {
-                      if (editDue) {
-                        setSelectedEditCalendarDate(new Date(editDue));
-                      } else {
-                        setSelectedEditCalendarDate(new Date());
-                      }
-                      setShowEditDatePicker(true);
-                    }}
+                    onPress={() => setShowEditDatePicker(!showEditDatePicker)}
                   >
                     <Text style={[styles.datePlaceholder, editDue && { color: '#111827' }]}>
                       {editDue ? new Date(editDue).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'mm/dd/yyyy'}
                     </Text>
                     <Ionicons name="calendar-clear" size={16} color="#6B7280" />
                   </Pressable>
+                  {Platform.OS === 'ios' && showEditDatePicker && (
+                    <DateTimePicker
+                      value={editDue ? new Date(editDue) : new Date()}
+                      mode="date"
+                      display="spinner"
+                      onChange={onEditDateChange}
+                      style={styles.datePickerIOSInline}
+                      textColor="#000000"
+                      minimumDate={new Date()}
+                    />
+                  )}
+                  {Platform.OS === 'android' && showEditDatePicker && (
+                    <DateTimePicker
+                      value={editDue ? new Date(editDue) : new Date()}
+                      mode="date"
+                      display="default"
+                      onChange={onEditDateChange}
+                      minimumDate={new Date()}
+                    />
+                  )}
                 </View>
               </View>
             </ScrollView>
-            
+
             {/* Spacer để tạo khoảng cách giữa form và buttons */}
             <View style={styles.modalActionsSpacer} />
 
@@ -1628,146 +1530,7 @@ export default function MyTasksScreen() {
         </Pressable>
       </Modal>
 
-      {/* Edit Date Picker Modal */}
-      <Modal
-        visible={showEditDatePicker}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowEditDatePicker(false)}
-      >
-        <Pressable 
-          style={styles.modalOverlay}
-          onPress={() => setShowEditDatePicker(false)}
-        >
-          <Pressable style={styles.datePickerContent} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.datePickerTitle}>Select Due Date</Text>
-            
-            {/* Calendar Navigation */}
-            <View style={styles.calendarHeader}>
-              <Pressable
-                style={styles.calendarNavButton}
-                onPress={() => {
-                  const current = new Date(selectedEditCalendarDate || new Date());
-                  current.setMonth(current.getMonth() - 1);
-                  setSelectedEditCalendarDate(current);
-                  selectedEditCalendarDateRef.current = current; // Also update ref
-                }}
-              >
-                <Ionicons name="chevron-back" size={20} color="#4B5563" />
-              </Pressable>
-              <Text style={styles.calendarMonthText}>
-                {selectedEditCalendarDate ? selectedEditCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </Text>
-              <Pressable
-                style={styles.calendarNavButton}
-                onPress={() => {
-                  const current = new Date(selectedEditCalendarDate || new Date());
-                  current.setMonth(current.getMonth() + 1);
-                  setSelectedEditCalendarDate(current);
-                  selectedEditCalendarDateRef.current = current; // Also update ref
-                }}
-              >
-                <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-              </Pressable>
-            </View>
-            
-            <View style={styles.calendarGrid}>
-              {(() => {
-                const currentDate = new Date(selectedEditCalendarDate || new Date());
-                const year = currentDate.getFullYear();
-                const month = currentDate.getMonth();
-                
-                const firstDay = new Date(year, month, 1);
-                const lastDay = new Date(year, month + 1, 0);
-                const daysInMonth = lastDay.getDate();
-                const startingDayOfWeek = firstDay.getDay();
-                
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                
-                const selectedDate = selectedEditCalendarDate ? new Date(selectedEditCalendarDate) : null;
-                if (selectedDate) selectedDate.setHours(0, 0, 0, 0);
-                
-                const days = [];
-                
-                for (let i = 0; i < startingDayOfWeek; i++) {
-                  days.push(<View key={`empty-${i}`} style={styles.calendarDay} />);
-                }
-                
-                for (let day = 1; day <= daysInMonth; day++) {
-                  const date = new Date(year, month, day);
-                  date.setHours(0, 0, 0, 0);
-                  const isToday = date.getTime() === today.getTime();
-                  const isSelected = selectedDate && date.getTime() === selectedDate.getTime();
-                  const isPast = date < today;
-                  
-                  days.push(
-                    <Pressable
-                      key={day}
-                      style={[
-                        styles.calendarDay,
-                        isToday && styles.calendarDayToday,
-                        isSelected && styles.calendarDaySelected,
-                        isPast && styles.calendarDayPast,
-                      ]}
-                      onPress={() => {
-                        if (!isPast) {
-                          const date = new Date(year, month, day);
-                          setSelectedEditCalendarDate(date);
-                          selectedEditCalendarDateRef.current = date; // Also update ref
-                        }
-                      }}
-                      disabled={isPast}
-                    >
-                      <Text style={[
-                        styles.calendarDayText,
-                        isToday && styles.calendarDayTextToday,
-                        isSelected && styles.calendarDayTextSelected,
-                        isPast && styles.calendarDayTextPast,
-                      ]}>
-                        {day}
-                      </Text>
-                    </Pressable>
-                  );
-                }
-                
-                return days;
-              })()}
-            </View>
-            
-            <View style={styles.datePickerButtons}>
-              <Pressable 
-                style={styles.datePickerButton}
-                onPress={() => {
-                  setShowEditDatePicker(false);
-                  setSelectedEditCalendarDate(null);
-                  selectedEditCalendarDateRef.current = null; // Also update ref
-                }}
-              >
-                <Text style={styles.datePickerButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable 
-                style={[styles.datePickerButton, styles.datePickerButtonPrimary]}
-                onPress={() => {
-                  if (selectedEditCalendarDate) {
-                    const year = selectedEditCalendarDate.getFullYear();
-                    const month = String(selectedEditCalendarDate.getMonth() + 1).padStart(2, '0');
-                    const day = String(selectedEditCalendarDate.getDate()).padStart(2, '0');
-                    const dueDateStr = `${year}-${month}-${day}`;
-                    setEditDue(dueDateStr);
-                    editDueRef.current = dueDateStr; // Also update ref
-                  }
-                  setShowEditDatePicker(false);
-                  setSelectedEditCalendarDate(null);
-                  selectedEditCalendarDateRef.current = null; // Also update ref
-                }}
-              >
-                <Text style={styles.datePickerButtonTextPrimary}>Confirm</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+
 
       {/* Custom Delete Confirmation Dialog */}
       <Modal
@@ -1776,7 +1539,7 @@ export default function MyTasksScreen() {
         animationType="fade"
         onRequestClose={cancelDeleteTask}
       >
-        <Pressable 
+        <Pressable
           style={styles.deleteModalOverlay}
           onPress={cancelDeleteTask}
         >
@@ -1791,13 +1554,13 @@ export default function MyTasksScreen() {
               Are you sure you want to delete &quot;{taskToDelete?.title}&quot;? This action cannot be undone.
             </Text>
             <View style={styles.deleteModalActions}>
-              <Pressable 
+              <Pressable
                 style={styles.deleteCancelButton}
                 onPress={cancelDeleteTask}
               >
                 <Text style={styles.deleteCancelText}>CANCEL</Text>
               </Pressable>
-              <Pressable 
+              <Pressable
                 style={styles.deleteConfirmButton}
                 onPress={() => {
                   // Double check taskToDelete exists before calling confirmDeleteTask
@@ -2058,10 +1821,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   modalScroll: {
-    maxHeight: 500, // Tăng maxHeight từ 400 lên 500 để có không gian scroll nhiều hơn
+    // maxHeight: 500, // Removed to allow growing within parent
     zIndex: 1,
     overflow: 'visible',
-    paddingBottom: 8, // Thêm paddingBottom để đảm bảo có khoảng cách ở cuối scroll
+    paddingBottom: 8,
+    flexGrow: 0, // Let it grow to content size, constrained by parent max height
   },
   modalFieldsContainer: {
     // Không dùng gap, sẽ dùng marginBottom cho từng field
@@ -2815,6 +2579,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  datePickerIOSInline: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    marginTop: 8,
   },
 });
 

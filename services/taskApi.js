@@ -14,13 +14,13 @@ import { API_BASE_URL } from '@/config/api';
  */
 export const createTask = async (token, taskData) => {
   const url = `${API_BASE_URL}/task/create`;
-  
+
   // Validate required fields before sending
   if (!taskData.name || taskData.name.trim() === '') {
     throw new Error('Task name is required');
   }
-  if (!taskData.assignedTo || taskData.assignedTo.trim() === '') {
-    throw new Error('AssignedTo is required');
+  if ((!taskData.assignedTo || taskData.assignedTo.trim() === '') && !taskData.assigneeId) {
+    throw new Error('AssignedTo or AssigneeId is required');
   }
 
   // Prepare request body
@@ -46,8 +46,10 @@ export const createTask = async (token, taskData) => {
 
   const requestBody = {
     projectName: projectName,
+    projectId: taskData.projectId || null,
     name: taskData.name.trim(),
-    assignedTo: taskData.assignedTo.trim(),
+    assignedTo: taskData.assignedTo ? taskData.assignedTo.trim() : null,
+    assigneeId: taskData.assigneeId || null,
     dueDate: taskData.dueDate || null,
   };
 
@@ -62,8 +64,8 @@ export const createTask = async (token, taskData) => {
   }
 
   console.log('Creating task:', url);
-  console.log('Task data:', { 
-    ...requestBody, 
+  console.log('Task data:', {
+    ...requestBody,
     assignedTo: requestBody.assignedTo || '***',
     priority: requestBody.priority || 'not included (will use default)'
   });
@@ -72,7 +74,9 @@ export const createTask = async (token, taskData) => {
   console.log('Name:', requestBody.name, 'Length:', requestBody.name?.length);
   console.log('AssignedTo:', requestBody.assignedTo, 'Length:', requestBody.assignedTo?.length);
   console.log('DueDate:', requestBody.dueDate);
-  
+
+  console.log('Token being sent:', token ? token.substring(0, 20) + '...' : 'null');
+
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -85,40 +89,40 @@ export const createTask = async (token, taskData) => {
     });
 
     console.log('Create task response status:', response.status);
-    
+
     if (!response.ok) {
       let errorMessage = 'Không thể tạo task';
       let errorDetails = null;
-      
+
       try {
         const errorJson = await response.json();
         console.error('Create task failed - JSON:', errorJson);
         console.error('Request data that failed:', requestBody);
-        
+
         // Parse error message from backend
         const backendMessage = errorJson.message || errorJson.code || '';
         const errorCode = errorJson.code || '';
         const status = response.status;
-        
+
         // Map error codes to user-friendly Vietnamese messages with SPECIFIC error details
         if (errorCode === '400' || status === 400) {
           // Check error details field if available
           const errorDetailsField = errorJson.details || null;
-          
+
           if (backendMessage === 'Invalid input data' || backendMessage.includes('Invalid')) {
             // Determine SPECIFIC validation failure from request data
             const specificErrors = [];
-            
+
             // Check name field
             if (!requestBody.name || requestBody.name.trim() === '') {
               specificErrors.push('Tên task không được để trống');
             }
-            
+
             // Check assignedTo field
             if (!requestBody.assignedTo || requestBody.assignedTo.trim() === '') {
               specificErrors.push('Người được gán không được để trống');
             }
-            
+
             // Check dueDate field
             if (requestBody.dueDate) {
               const dueDate = new Date(requestBody.dueDate);
@@ -129,7 +133,7 @@ export const createTask = async (token, taskData) => {
                 specificErrors.push('Ngày hết hạn không được trong quá khứ');
               }
             }
-            
+
             // If we found specific errors, show them (without "Dữ liệu không hợp lệ" title)
             if (specificErrors.length > 0) {
               errorMessage = specificErrors[0]; // Use first error as title
@@ -178,7 +182,7 @@ export const createTask = async (token, taskData) => {
       } catch (_) {
         const errorText = await response.text();
         console.error('Create task failed - Text:', errorText);
-        
+
         // Try to provide user-friendly message even from text response
         if (errorText.includes('Invalid') || errorText.includes('invalid')) {
           errorMessage = 'Dữ liệu không hợp lệ';
@@ -187,7 +191,7 @@ export const createTask = async (token, taskData) => {
           errorMessage = errorText.trim() || errorMessage;
         }
       }
-      
+
       // Create error object with message and details
       const error = new Error(errorMessage);
       error.details = errorDetails;
@@ -199,23 +203,23 @@ export const createTask = async (token, taskData) => {
     return taskResponse;
   } catch (error) {
     console.error('Create task error:', error);
-    
+
     // If error already has message and details, just rethrow it
     if (error.message && (error.details !== undefined || error.message !== 'Failed to create task')) {
       throw error;
     }
-    
+
     // Handle network errors and other unexpected errors
     let errorMessage = 'Không thể tạo task';
     let errorDetails = null;
-    
+
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       errorMessage = 'Lỗi kết nối';
       errorDetails = 'Không thể kết nối đến server. Vui lòng kiểm tra:\n• Kết nối mạng\n• Backend có đang chạy không';
     } else if (error.message) {
       errorMessage = error.message;
     }
-    
+
     const enhancedError = new Error(errorMessage);
     enhancedError.details = errorDetails;
     throw enhancedError;
@@ -232,7 +236,7 @@ export const createTask = async (token, taskData) => {
 export const getTasks = async (token, offset = 0, limit = 100) => {
   const url = `${API_BASE_URL}/task/paging?offset=${offset}&limit=${limit}`;
   console.log('Getting tasks:', url);
-  
+
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -244,18 +248,18 @@ export const getTasks = async (token, offset = 0, limit = 100) => {
     });
 
     console.log('Get tasks response status:', response.status);
-    
+
     if (!response.ok) {
       let errorMessage = 'Không thể tải danh sách task';
       let errorDetails = null;
-      
+
       try {
         const errorJson = await response.json();
         console.error('Get tasks failed - JSON:', errorJson);
-        
+
         const backendMessage = errorJson.message || errorJson.code || '';
         const status = response.status;
-        
+
         if (status === 401) {
           errorMessage = 'Phiên đăng nhập đã hết hạn';
           errorDetails = 'Vui lòng đăng nhập lại';
@@ -273,7 +277,7 @@ export const getTasks = async (token, offset = 0, limit = 100) => {
         console.error('Get tasks failed - Text:', errorText);
         errorMessage = errorText.trim() || errorMessage;
       }
-      
+
       const error = new Error(errorMessage);
       error.details = errorDetails;
       throw error;
@@ -284,23 +288,23 @@ export const getTasks = async (token, offset = 0, limit = 100) => {
     return tasksPage;
   } catch (error) {
     console.error('Get tasks error:', error);
-    
+
     // If error already has message and details, just rethrow it
     if (error.message && (error.details !== undefined || error.message !== 'Failed to fetch tasks')) {
       throw error;
     }
-    
+
     // Handle network errors and other unexpected errors
     let errorMessage = 'Không thể tải danh sách task';
     let errorDetails = null;
-    
+
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       errorMessage = 'Lỗi kết nối';
       errorDetails = 'Không thể kết nối đến server. Vui lòng kiểm tra:\n• Kết nối mạng\n• Backend có đang chạy không';
     } else if (error.message) {
       errorMessage = error.message;
     }
-    
+
     const enhancedError = new Error(errorMessage);
     enhancedError.details = errorDetails;
     throw enhancedError;
@@ -320,11 +324,11 @@ export const updateTask = async (token, taskId, taskData) => {
   console.log('Update task - token exists:', !!token);
   console.log('Update task - taskId:', taskId);
   console.log('Update task - taskData:', JSON.stringify(taskData, null, 2));
-  
+
   if (!token) {
     throw new Error('Token is required to update a task');
   }
-  
+
   try {
     const response = await fetch(url, {
       method: 'PUT',
@@ -337,7 +341,7 @@ export const updateTask = async (token, taskId, taskData) => {
     });
 
     console.log('Update task response status:', response.status);
-    
+
     if (!response.ok) {
       let errorMessage = 'Failed to update task';
       try {
@@ -370,7 +374,7 @@ export const updateTask = async (token, taskId, taskData) => {
 export const deleteTask = async (token, taskId) => {
   const url = `${API_BASE_URL}/task/delete?id=${taskId}`;
   console.log('Deleting task:', url);
-  
+
   try {
     const response = await fetch(url, {
       method: 'DELETE',
@@ -382,18 +386,18 @@ export const deleteTask = async (token, taskId) => {
     });
 
     console.log('Delete task response status:', response.status);
-    
+
     if (!response.ok) {
       let errorMessage = 'Không thể xóa task';
       let errorDetails = null;
-      
+
       try {
         const errorJson = await response.json();
         console.error('Delete task failed - JSON:', errorJson);
-        
+
         const backendMessage = errorJson.message || errorJson.code || '';
         const status = response.status;
-        
+
         if (status === 401) {
           errorMessage = 'Phiên đăng nhập đã hết hạn';
           errorDetails = 'Vui lòng đăng nhập lại';
@@ -414,7 +418,7 @@ export const deleteTask = async (token, taskId) => {
         console.error('Delete task failed - Text:', errorText);
         errorMessage = errorText.trim() || errorMessage;
       }
-      
+
       const error = new Error(errorMessage);
       error.details = errorDetails;
       throw error;
@@ -423,23 +427,23 @@ export const deleteTask = async (token, taskId) => {
     console.log('Task deleted successfully');
   } catch (error) {
     console.error('Delete task error:', error);
-    
+
     // If error already has message and details, just rethrow it
     if (error.message && (error.details !== undefined || error.message !== 'Failed to delete task')) {
       throw error;
     }
-    
+
     // Handle network errors and other unexpected errors
     let errorMessage = 'Không thể xóa task';
     let errorDetails = null;
-    
+
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       errorMessage = 'Lỗi kết nối';
       errorDetails = 'Không thể kết nối đến server. Vui lòng kiểm tra:\n• Kết nối mạng\n• Backend có đang chạy không';
     } else if (error.message) {
       errorMessage = error.message;
     }
-    
+
     const enhancedError = new Error(errorMessage);
     enhancedError.details = errorDetails;
     throw enhancedError;

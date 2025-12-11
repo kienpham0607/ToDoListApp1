@@ -19,6 +19,7 @@ import userManagementReducer from './userManagementSlice';
 import taskReducer from './taskSlice';
 import teamReducer from './teamSlice';
 import projectReducer from './projectSlice';
+import messageReducer from './messageSlice';
 
 export const store = configureStore({
   reducer: {
@@ -27,6 +28,7 @@ export const store = configureStore({
     tasks: taskReducer,
     team: teamReducer,
     project: projectReducer,
+    message: messageReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState, useRef } from 'react';
-import { Alert, Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, TouchableOpacity } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CreateProjectScreen() {
   const router = useRouter();
-  
+
   // Form states
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
@@ -16,12 +17,15 @@ export default function CreateProjectScreen() {
   const [selectedTeamMembers, setSelectedTeamMembers] = useState([]);
   const [showManagerPicker, setShowManagerPicker] = useState(false);
   const [showTeamMembersPicker, setShowTeamMembersPicker] = useState(false);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
   const managerDropdownRef = useRef(null);
   const teamMembersDropdownRef = useRef(null);
   const scrollViewRef = useRef(null);
   const [managerLayout, setManagerLayout] = useState({ y: 0, height: 0 });
   const [teamMembersLayout, setTeamMembersLayout] = useState({ y: 0, height: 0 });
-  
+
   const screenHeight = Dimensions.get('window').height;
 
   const teamMembers = [
@@ -37,11 +41,35 @@ export default function CreateProjectScreen() {
   ];
 
   const toggleTeamMember = (memberId) => {
-    setSelectedTeamMembers(prev => 
-      prev.includes(memberId) 
+    setSelectedTeamMembers(prev =>
+      prev.includes(memberId)
         ? prev.filter(id => id !== memberId)
         : [...prev, memberId]
     );
+  };
+
+  const onStartDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false);
+    }
+    if (selectedDate) {
+      setStartDate(selectedDate.toISOString());
+    }
+  };
+
+  const onEndDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false);
+    }
+    if (selectedDate) {
+      setEndDate(selectedDate.toISOString());
+    }
+  };
+
+  const formatDateForDisplay = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const handleCreateProject = () => {
@@ -80,7 +108,7 @@ export default function CreateProjectScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Content */}
-      <ScrollView 
+      <ScrollView
         ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -124,36 +152,81 @@ export default function CreateProjectScreen() {
 
         {/* Start Date & End Date Row */}
         <View style={styles.formRow}>
-          <View style={[styles.formGroupHalf, { marginRight: 12, zIndex: 1 }]}>
+          <View style={[styles.formGroupHalf, { marginRight: 12 }]}>
             <Text style={styles.label}>Start Date</Text>
-            <View style={styles.dateInput}>
+            <Pressable
+              style={styles.dateInput}
+              onPress={() => {
+                setShowStartDatePicker(!showStartDatePicker);
+                setShowEndDatePicker(false);
+              }}
+            >
               <Ionicons name="calendar-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-              <TextInput
-                style={styles.dateInputText}
-                placeholder="Pick a date"
-                placeholderTextColor="#9CA3AF"
-                value={startDate}
-                onChangeText={setStartDate}
+              <Text style={[styles.dateInputText, !startDate && { color: '#9CA3AF' }]}>
+                {startDate ? formatDateForDisplay(startDate) : 'Select date'}
+              </Text>
+            </Pressable>
+            {Platform.OS === 'ios' && showStartDatePicker && (
+              <DateTimePicker
+                value={startDate ? new Date(startDate) : new Date()}
+                mode="date"
+                display="inline"
+                onChange={onStartDateChange}
+                style={styles.datePickerIOSInline}
+                themeVariant="light"
+                accentColor="#2563EB"
               />
-            </View>
+            )}
+            {Platform.OS === 'android' && showStartDatePicker && (
+              <DateTimePicker
+                value={startDate ? new Date(startDate) : new Date()}
+                mode="date"
+                display="default"
+                onChange={onStartDateChange}
+              />
+            )}
+
           </View>
           <View style={styles.formGroupHalf}>
             <Text style={styles.label}>End Date</Text>
-            <View style={styles.dateInput}>
+            <Pressable
+              style={styles.dateInput}
+              onPress={() => {
+                setShowEndDatePicker(!showEndDatePicker);
+                setShowStartDatePicker(false);
+              }}
+            >
               <Ionicons name="calendar-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-              <TextInput
-                style={styles.dateInputText}
-                placeholder="Pick a date"
-                placeholderTextColor="#9CA3AF"
-                value={endDate}
-                onChangeText={setEndDate}
+              <Text style={[styles.dateInputText, !endDate && { color: '#9CA3AF' }]}>
+                {endDate ? formatDateForDisplay(endDate) : 'Select date'}
+              </Text>
+            </Pressable>
+            {Platform.OS === 'ios' && showEndDatePicker && (
+              <DateTimePicker
+                value={endDate ? new Date(endDate) : new Date()}
+                mode="date"
+                display="inline"
+                onChange={onEndDateChange}
+                style={styles.datePickerIOSInline}
+                themeVariant="light"
+                accentColor="#2563EB"
+                minimumDate={startDate ? new Date(startDate) : undefined}
               />
-            </View>
+            )}
+            {Platform.OS === 'android' && showEndDatePicker && (
+              <DateTimePicker
+                value={endDate ? new Date(endDate) : new Date()}
+                mode="date"
+                display="default"
+                onChange={onEndDateChange}
+                minimumDate={startDate ? new Date(startDate) : undefined}
+              />
+            )}
           </View>
         </View>
 
         {/* Project Manager */}
-        <View 
+        <View
           ref={managerDropdownRef}
           style={[styles.formGroup, { zIndex: showManagerPicker ? 10010 : 1, position: 'relative' }]}
           onLayout={(event) => {
@@ -166,7 +239,7 @@ export default function CreateProjectScreen() {
             <Text style={styles.requiredAsterisk}> *</Text>
           </View>
           <View style={[styles.dropdownContainer, { zIndex: showManagerPicker ? 10011 : 9999 }]}>
-            <Pressable 
+            <Pressable
               style={styles.dropdown}
               onPress={() => {
                 const newState = !showManagerPicker;
@@ -183,9 +256,9 @@ export default function CreateProjectScreen() {
                           const totalNeeded = y + height + dropdownHeight + actionButtonsHeight;
                           const scrollNeeded = totalNeeded - visibleArea;
                           if (scrollNeeded > 0) {
-                            scrollViewRef.current.scrollTo({ 
-                              y: y + scrollNeeded + 20, 
-                              animated: true 
+                            scrollViewRef.current.scrollTo({
+                              y: y + scrollNeeded + 20,
+                              animated: true
                             });
                           }
                         },
@@ -197,9 +270,9 @@ export default function CreateProjectScreen() {
                           const totalNeeded = managerLayout.y + managerLayout.height + dropdownHeight + actionButtonsHeight;
                           const scrollNeeded = totalNeeded - visibleArea;
                           if (scrollNeeded > 0 && scrollViewRef.current) {
-                            scrollViewRef.current.scrollTo({ 
-                              y: managerLayout.y + scrollNeeded + 20, 
-                              animated: true 
+                            scrollViewRef.current.scrollTo({
+                              y: managerLayout.y + scrollNeeded + 20,
+                              animated: true
                             });
                           }
                         }
@@ -212,11 +285,11 @@ export default function CreateProjectScreen() {
               <Text style={[styles.dropdownText, !projectManager && styles.dropdownPlaceholder]}>
                 {projectManager || 'Select project manager'}
               </Text>
-              <Ionicons 
-                name={showManagerPicker ? "chevron-up" : "chevron-down"} 
-                size={16} 
-                color="#6B7280" 
-                style={{ marginLeft: 8 }} 
+              <Ionicons
+                name={showManagerPicker ? "chevron-up" : "chevron-down"}
+                size={16}
+                color="#6B7280"
+                style={{ marginLeft: 8 }}
               />
             </Pressable>
             {showManagerPicker && (
@@ -251,7 +324,7 @@ export default function CreateProjectScreen() {
         </View>
 
         {/* Team Members */}
-        <View 
+        <View
           ref={teamMembersDropdownRef}
           style={[styles.formGroup, { zIndex: showManagerPicker ? 1 : 10001 }]}
           onLayout={(event) => {
@@ -287,53 +360,53 @@ export default function CreateProjectScreen() {
               <Pressable
                 style={styles.addMemberButton}
                 onPress={() => {
-                const newState = !showTeamMembersPicker;
-                setShowTeamMembersPicker(newState);
-                if (newState) {
-                  setTimeout(() => {
-                    if (scrollViewRef.current && teamMembersDropdownRef.current) {
-                      teamMembersDropdownRef.current.measureLayout(
-                        scrollViewRef.current,
-                        (x, y, width, height) => {
-                          const dropdownHeight = 200;
-                          const actionButtonsHeight = 100; // Approximate height of action buttons
-                          const visibleArea = screenHeight - 200; // Account for header and safe area
-                          const totalNeeded = y + height + dropdownHeight + actionButtonsHeight;
-                          const scrollNeeded = totalNeeded - visibleArea;
-                          if (scrollNeeded > 0) {
-                            scrollViewRef.current.scrollTo({ 
-                              y: y + scrollNeeded + 20, 
-                              animated: true 
-                            });
+                  const newState = !showTeamMembersPicker;
+                  setShowTeamMembersPicker(newState);
+                  if (newState) {
+                    setTimeout(() => {
+                      if (scrollViewRef.current && teamMembersDropdownRef.current) {
+                        teamMembersDropdownRef.current.measureLayout(
+                          scrollViewRef.current,
+                          (x, y, width, height) => {
+                            const dropdownHeight = 200;
+                            const actionButtonsHeight = 100; // Approximate height of action buttons
+                            const visibleArea = screenHeight - 200; // Account for header and safe area
+                            const totalNeeded = y + height + dropdownHeight + actionButtonsHeight;
+                            const scrollNeeded = totalNeeded - visibleArea;
+                            if (scrollNeeded > 0) {
+                              scrollViewRef.current.scrollTo({
+                                y: y + scrollNeeded + 20,
+                                animated: true
+                              });
+                            }
+                          },
+                          () => {
+                            // Fallback: use layout state
+                            const dropdownHeight = 200;
+                            const actionButtonsHeight = 100;
+                            const visibleArea = screenHeight - 200;
+                            const totalNeeded = teamMembersLayout.y + teamMembersLayout.height + dropdownHeight + actionButtonsHeight;
+                            const scrollNeeded = totalNeeded - visibleArea;
+                            if (scrollNeeded > 0 && scrollViewRef.current) {
+                              scrollViewRef.current.scrollTo({
+                                y: teamMembersLayout.y + scrollNeeded + 20,
+                                animated: true
+                              });
+                            }
                           }
-                        },
-                        () => {
-                          // Fallback: use layout state
-                          const dropdownHeight = 200;
-                          const actionButtonsHeight = 100;
-                          const visibleArea = screenHeight - 200;
-                          const totalNeeded = teamMembersLayout.y + teamMembersLayout.height + dropdownHeight + actionButtonsHeight;
-                          const scrollNeeded = totalNeeded - visibleArea;
-                          if (scrollNeeded > 0 && scrollViewRef.current) {
-                            scrollViewRef.current.scrollTo({ 
-                              y: teamMembersLayout.y + scrollNeeded + 20, 
-                              animated: true 
-                            });
-                          }
-                        }
-                      );
-                    }
-                  }, 150);
-                }
-              }}
+                        );
+                      }
+                    }, 150);
+                  }
+                }}
               >
                 <Ionicons name="add" size={20} color="#2563EB" />
                 <Text style={styles.addMemberText}>Add Team Member</Text>
-                <Ionicons 
-                  name={showTeamMembersPicker ? "chevron-up" : "chevron-down"} 
-                  size={16} 
-                  color="#2563EB" 
-                  style={{ marginLeft: 'auto' }} 
+                <Ionicons
+                  name={showTeamMembersPicker ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="#2563EB"
+                  style={{ marginLeft: 'auto' }}
                 />
               </Pressable>
               {showTeamMembersPicker && (
@@ -383,7 +456,7 @@ export default function CreateProjectScreen() {
           <Pressable style={styles.cancelButton} onPress={() => router.back()}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </Pressable>
-          <Pressable 
+          <Pressable
             style={[styles.createButton, (!projectName.trim() || !projectManager) && styles.createButtonDisabled]}
             onPress={handleCreateProject}
             disabled={!projectName.trim() || !projectManager}
@@ -813,6 +886,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
     letterSpacing: -0.2,
+  },
+  datePickerIOSInline: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    marginTop: 8,
   },
 });
 

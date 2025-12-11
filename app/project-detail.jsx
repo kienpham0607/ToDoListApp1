@@ -1,17 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import React, { useEffect, useMemo, useCallback, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert, TouchableOpacity } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import Toast from 'react-native-toast-message';
-import { 
+import {
   fetchProjectById,
   selectSelectedProject,
   selectProjectLoading,
   selectProjectError,
   clearError,
-  clearSelectedProject
+  clearSelectedProject,
+  deleteProjectById,
+  updateProjectById
 } from '@/store/projectSlice';
 import {
   fetchProjectMembersByProjectId,
@@ -22,7 +25,9 @@ import {
 } from '@/store/teamSlice';
 import {
   fetchTasks,
-  selectTasks
+  selectTasks,
+  updateExistingTask,
+  deleteExistingTask
 } from '@/store/taskSlice';
 import { selectToken, selectIsAuthenticated } from '@/store/authSlice';
 
@@ -46,6 +51,22 @@ export default function ProjectDetailScreen() {
   const [selectedUser, setSelectedUser] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddingMember, setIsAddingMember] = useState(false);
+
+  // State for edit project modal
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
+  const [editProjectName, setEditProjectName] = useState('');
+
+  const [editProjectDescription, setEditProjectDescription] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [tempStartDate, setTempStartDate] = useState(new Date());
+  const [tempEndDate, setTempEndDate] = useState(new Date());
+  const [isEditingProject, setIsEditingProject] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState(null);
+  const [activeTab, setActiveTab] = useState('Board');
 
   // Fetch project detail, members, and tasks when component mounts
   useEffect(() => {
@@ -102,17 +123,16 @@ export default function ProjectDetailScreen() {
     };
   }, [dispatch]);
 
-  // Format date for display
+  // Format date for display (DD/MM/YYYY)
   const formatDate = useCallback((dateString) => {
     if (!dateString) return 'Not set';
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return 'Invalid date';
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
-      });
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
     } catch {
       return dateString || 'Not set';
     }
@@ -123,17 +143,17 @@ export default function ProjectDetailScreen() {
     console.log('ProjectDetail: Computing teamMembers');
     console.log('ProjectDetail: project:', project?.id, project?.name);
     console.log('ProjectDetail: projectMembers from Redux:', projectMembers?.length || 0);
-    
+
     if (!project) {
       console.log('ProjectDetail: No project');
       return [];
     }
-    
+
     if (!projectMembers || projectMembers.length === 0) {
       console.log('ProjectDetail: No projectMembers in Redux state');
       return [];
     }
-    
+
     // Since API already filters by projectId, we can use all members
     // But we still filter to be safe
     const filtered = projectMembers
@@ -142,11 +162,18 @@ export default function ProjectDetailScreen() {
           console.log('ProjectDetail: Null member found');
           return false;
         }
-        
+
         // API should already filter by projectId, but double-check
+        // TEMPORARY: Relax filter for debugging
         const matchesById = member.project?.id && String(member.project.id) === String(project.id);
         const matchesByName = member.project?.name && member.project.name === project.name;
-        
+
+        // If project info is missing but we trusted the API, let it through (for debugging)
+        if (!member.project) {
+          console.log('ProjectDetail: Member missing project info, allowing for debug:', member.id);
+          return true;
+        }
+
         if (matchesById || matchesByName) {
           console.log('ProjectDetail: Member matches project:', {
             memberId: member.id,
@@ -156,7 +183,7 @@ export default function ProjectDetailScreen() {
             projectName: project.name
           });
         }
-        
+
         return matchesById || matchesByName;
       })
       .map(member => {
@@ -165,18 +192,18 @@ export default function ProjectDetailScreen() {
           console.log('ProjectDetail: Member missing user data:', member);
           return null;
         }
-        
+
         const initials = (user?.fullName || user?.username || 'U')
           .split(' ')
           .map(n => n[0])
           .join('')
           .substring(0, 2)
           .toUpperCase();
-        
+
         // roleInProject từ backend là enum (leader hoặc member), có thể là string hoặc enum value
         const role = member.roleInProject || '';
         const roleString = typeof role === 'string' ? role : String(role);
-        
+
         return {
           id: member.id,
           userId: user?.id,
@@ -187,14 +214,14 @@ export default function ProjectDetailScreen() {
         };
       })
       .filter(m => m !== null); // Remove null entries
-    
+
     console.log('ProjectDetail: Filtered team members count:', filtered.length);
     if (filtered.length > 0) {
-      console.log('ProjectDetail: Team members:', filtered.map(m => ({ 
-        id: m.id, 
-        name: m.name, 
-        email: m.email, 
-        role: m.role 
+      console.log('ProjectDetail: Team members:', filtered.map(m => ({
+        id: m.id,
+        name: m.name,
+        email: m.email,
+        role: m.role
       })));
     } else {
       console.log('ProjectDetail: No team members found after filtering');
@@ -202,7 +229,7 @@ export default function ProjectDetailScreen() {
         console.log('ProjectDetail: Sample projectMember from Redux:', JSON.stringify(projectMembers[0], null, 2));
       }
     }
-    
+
     return filtered;
   }, [project, projectMembers]);
 
@@ -222,12 +249,12 @@ export default function ProjectDetailScreen() {
       }
       return allUsers;
     }
-    
+
     const filtered = allUsers.filter(user => {
       // Filter out users who are already members
       const isMember = teamMembers.some(m => m.userId === user.id);
       if (isMember) return false;
-      
+
       // Filter by search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -236,10 +263,10 @@ export default function ProjectDetailScreen() {
         const matchesEmail = (user.email || '').toLowerCase().includes(query);
         return matchesName || matchesUsername || matchesEmail;
       }
-      
+
       return true;
     });
-    
+
     return filtered;
   }, [allUsers, teamMembers, searchQuery]);
 
@@ -337,7 +364,7 @@ export default function ProjectDetailScreen() {
       console.error('Failed to add member:', error);
       const errorData = error?.payload || error;
       const errorMessage = errorData?.message || error?.message || 'Failed to add member to project';
-      
+
       Toast.show({
         type: 'error',
         text1: 'Error',
@@ -351,6 +378,367 @@ export default function ProjectDetailScreen() {
     }
   }, [project, selectedUser, token, teamMembers, dispatch, projectId]);
 
+  // Handle delete project
+  const handleDeleteProject = useCallback(() => {
+    if (!project) return;
+
+    Alert.alert(
+      "Xóa dự án",
+      `Bạn có chắc chắn muốn xóa dự án "${project.name}" không? Hành động này không thể hoàn tác.`,
+      [
+        {
+          text: "Hủy",
+          style: "cancel"
+        },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await dispatch(deleteProjectById({ token, projectId: project.id })).unwrap();
+              Toast.show({
+                type: 'success',
+                text1: 'Thành công',
+                text2: 'Đã xóa dự án thành công',
+                position: 'top',
+                visibilityTime: 3000,
+                topOffset: 60,
+              });
+              router.replace('/(tabs)/projects');
+            } catch (error) {
+              Toast.show({
+                type: 'error',
+                text1: 'Lỗi',
+                text2: error.message || 'Không thể xóa dự án',
+                position: 'top',
+                visibilityTime: 4000,
+                topOffset: 60,
+              });
+            }
+          }
+        }
+      ]
+    );
+  }, [project, token, dispatch, router]);
+
+  // Open edit modal
+  const handleOpenEditModal = useCallback(() => {
+    if (project) {
+      setEditProjectName(project.name || '');
+      setEditProjectDescription(project.description || '');
+      setEditStartDate(project.startDate || '');
+      setEditEndDate(project.endDate || '');
+      setTempStartDate(project.startDate ? new Date(project.startDate) : new Date());
+      setTempEndDate(project.endDate ? new Date(project.endDate) : new Date());
+      setShowEditProjectModal(true);
+    }
+  }, [project]);
+
+  // Handle update project
+  const handleUpdateProject = useCallback(async () => {
+    if (!project) return;
+    if (!editProjectName.trim()) {
+      Toast.show({
+        type: 'error',
+        text1: 'Lỗi',
+        text2: 'Tên dự án không được để trống',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+      return;
+    }
+
+    setIsEditingProject(true);
+    try {
+      await dispatch(updateProjectById({
+        token,
+        projectId: project.id,
+        projectData: {
+          name: editProjectName.trim(),
+          description: editProjectDescription.trim(),
+          startDate: editStartDate.trim() || null,
+          endDate: editEndDate.trim() || null
+        }
+      })).unwrap();
+
+      setShowEditProjectModal(false);
+
+      // Refresh data to update metrics (time left, status)
+      await dispatch(fetchProjectById({ token, projectId: project.id })).unwrap();
+
+      Toast.show({
+        type: 'success',
+        text1: 'Thành công',
+        text2: 'Đã cập nhật dự án thành công',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Lỗi',
+        text2: error.message || 'Không thể cập nhật dự án',
+        position: 'top',
+        visibilityTime: 4000,
+        topOffset: 60,
+      });
+    } finally {
+      setIsEditingProject(false);
+    }
+  }, [project, editProjectName, editProjectDescription, editStartDate, editEndDate, token, dispatch]);
+
+  // Handle toggle task status (Complete/Incomplete)
+  const handleToggleTaskStatus = useCallback(async (task) => {
+    // Check multiple variations to be safe
+    const currentStatus = task.status ? String(task.status).toLowerCase() : '';
+    const isCompleted = currentStatus === 'completed' || currentStatus === 'done';
+
+    // Use valid backend enum values: 'todo', 'in_progress', 'done', 'overdue'
+    const newStatus = isCompleted ? 'todo' : 'done';
+    const newProgress = isCompleted ? 0 : 100;
+
+    try {
+      await dispatch(updateExistingTask({
+        token,
+        taskId: task.id,
+        taskData: {
+          status: newStatus,
+          progress: newProgress,
+        }
+      })).unwrap();
+
+      Toast.show({
+        type: 'success',
+        text1: 'Thành công',
+        text2: `Đã đánh dấu task là ${newStatus === 'done' ? 'hoàn thành' : 'chưa hoàn thành'}`,
+        position: 'top',
+        visibilityTime: 2000,
+        topOffset: 60,
+      });
+
+      // Refresh tasks
+      await dispatch(fetchTasks({ token, offset: 0, limit: 1000 }));
+
+      // If task is marked as completed, switch to Completed tab
+      if (newStatus === 'done') {
+        setActiveTab('Completed');
+      }
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Lỗi',
+        text2: error.message || 'Không thể cập nhật trạng thái task',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+    }
+  }, [token, dispatch]);
+
+  // Handle delete task
+  const handleDeleteTask = useCallback((taskId, taskTitle) => {
+    console.log('handleDeleteTask called:', { taskId, taskTitle, hasToken: !!token });
+
+    if (!token) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'You must be logged in to delete a task',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+      return;
+    }
+
+    const id = typeof taskId === 'string' ? parseInt(taskId, 10) : taskId;
+
+    if (!id || isNaN(id)) {
+      console.error('Invalid taskId:', taskId);
+      Toast.show({
+        type: 'error',
+        text1: 'Lỗi',
+        text2: 'ID task không hợp lệ',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+      return;
+    }
+
+    console.log('Setting task to delete:', { id, title: taskTitle });
+    setTaskToDelete({ id, title: taskTitle });
+    setShowDeleteConfirm(true);
+  }, [token]);
+
+  // Confirm delete task
+  const confirmDeleteTask = useCallback(async () => {
+    if (!token) {
+      console.error('Delete task: Missing token');
+      setShowDeleteConfirm(false);
+      return;
+    }
+
+    if (!taskToDelete) {
+      console.error('Delete task: Missing taskToDelete');
+      setShowDeleteConfirm(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Lỗi',
+        text2: 'Không tìm thấy thông tin task để xóa',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+      return;
+    }
+
+    const taskId = typeof taskToDelete.id === 'string' ? parseInt(taskToDelete.id, 10) : taskToDelete.id;
+
+    if (!taskId || isNaN(taskId)) {
+      console.error('Delete task: Invalid taskId', taskToDelete.id);
+      Toast.show({
+        type: 'error',
+        text1: 'Lỗi',
+        text2: 'ID task không hợp lệ',
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+      return;
+    }
+
+    const taskTitle = taskToDelete.title || 'task';
+    console.log('Delete task: Attempting to delete task', { taskId, taskTitle });
+
+    try {
+      await dispatch(deleteExistingTask({ token, taskId })).unwrap();
+
+      setShowDeleteConfirm(false);
+      setTaskToDelete(null);
+
+      // Refresh tasks list after successful deletion
+      console.log('Delete successful, refreshing tasks...');
+      await dispatch(fetchTasks({ token, offset: 0, limit: 100 }));
+
+      // Refresh project to update task count
+      if (project?.id) {
+        await dispatch(fetchProjectById({ token, projectId: project.id })).unwrap();
+      }
+
+      Toast.show({
+        type: 'success',
+        text1: 'Task Deleted',
+        text2: `"${taskTitle}" has been deleted successfully`,
+        position: 'top',
+        visibilityTime: 3000,
+        topOffset: 60,
+      });
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+
+      let errorMessage = 'Không thể xóa task';
+      let errorDetails = 'Vui lòng thử lại sau';
+
+      if (error?.payload) {
+        if (typeof error.payload === 'object' && error.payload !== null) {
+          errorMessage = String(error.payload.message || errorMessage);
+          errorDetails = String(error.payload.details || errorDetails);
+        } else if (typeof error.payload === 'string') {
+          errorMessage = error.payload;
+        }
+      } else if (error && typeof error === 'object') {
+        errorMessage = String(error.message || errorMessage);
+        errorDetails = String(error.details || errorDetails);
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
+      errorMessage = errorMessage.replace(/^Failed to delete task:\s*/i, '');
+      errorMessage = errorMessage.trim() || 'Không thể xóa task';
+
+      Toast.show({
+        type: 'error',
+        text1: errorMessage,
+        text2: errorDetails,
+        position: 'top',
+        visibilityTime: errorDetails && errorDetails !== 'Vui lòng thử lại sau' ? 6000 : 4000,
+        topOffset: 60,
+      });
+    }
+  }, [taskToDelete, token, dispatch, project]);
+
+  // Cancel delete
+  const cancelDeleteTask = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setTaskToDelete(null);
+  }, []);
+
+  // Format date for input (YYYY-MM-DD)
+  const formatDateForInput = useCallback((date) => {
+    if (!date) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  // Format date for display (DD/MM/YYYY)
+  const formatDateForDisplay = useCallback((dateString) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch {
+      return dateString;
+    }
+  }, []);
+
+  // Handle DatePicker Change
+  const onStartDateChange = (event, selectedDate) => {
+    if (event.type === 'dismissed') {
+      setShowStartDatePicker(false);
+      return;
+    }
+
+    const currentDate = selectedDate || tempStartDate;
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false);
+      setEditStartDate(formatDateForInput(currentDate));
+    }
+    setTempStartDate(currentDate);
+  };
+
+  const onEndDateChange = (event, selectedDate) => {
+    if (event.type === 'dismissed') {
+      setShowEndDatePicker(false);
+      return;
+    }
+
+    const currentDate = selectedDate || tempEndDate;
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false);
+      setEditEndDate(formatDateForInput(currentDate));
+    }
+    setTempEndDate(currentDate);
+  };
+
+  const confirmIOSStartDate = () => {
+    setEditStartDate(formatDateForInput(tempStartDate));
+    setShowStartDatePicker(false);
+  };
+
+  const confirmIOSEndDate = () => {
+    setEditEndDate(formatDateForInput(tempEndDate));
+    setShowEndDatePicker(false);
+  };
+
   // Find project manager (leader role - người tạo team)
   const projectManager = useMemo(() => {
     // Tìm member có role là "leader" (người tạo team)
@@ -358,7 +746,7 @@ export default function ProjectDetailScreen() {
       const role = m.role?.toLowerCase?.() || m.role || '';
       return role === 'leader';
     });
-    
+
     if (manager) {
       console.log('ProjectDetail: Found project manager (leader):', manager.name);
       return {
@@ -367,7 +755,7 @@ export default function ProjectDetailScreen() {
         initials: manager.initials,
       };
     }
-    
+
     // Fallback: Nếu không tìm thấy leader, lấy member đầu tiên
     // (trường hợp này không nên xảy ra vì backend tự động thêm creator là leader)
     if (teamMembers.length > 0) {
@@ -378,7 +766,7 @@ export default function ProjectDetailScreen() {
         initials: teamMembers[0].initials,
       };
     }
-    
+
     console.log('ProjectDetail: No team members found');
     return {
       name: 'Unknown',
@@ -390,8 +778,8 @@ export default function ProjectDetailScreen() {
   // Filter tasks for this project
   const projectTasks = useMemo(() => {
     if (!project || !allTasks) return [];
-    
-    return allTasks.filter(task => 
+
+    return allTasks.filter(task =>
       task.projectName === project.name ||
       (task.project && String(task.project.id) === String(project.id))
     );
@@ -409,35 +797,47 @@ export default function ProjectDetailScreen() {
     projectTasks.forEach(task => {
       const status = task.status || 'todo';
       let statusKey = 'To Do';
-      
-      if (status.toLowerCase() === 'todo') statusKey = 'To Do';
-      else if (status.toLowerCase() === 'inprogress' || status.toLowerCase() === 'in progress') statusKey = 'In Progress';
-      else if (status.toLowerCase() === 'review') statusKey = 'Review';
-      else if (status.toLowerCase() === 'completed' || status.toLowerCase() === 'done') statusKey = 'Done';
-      
+
+      const statusLower = status.toLowerCase();
+      // If progress is 100, consider it Done regardless of status label (unless explicitly not done?)
+      // BUT backend might set progress 100 and status 'done'.
+
+      if (statusLower === 'completed' || statusLower === 'done' || (task.progress === 100)) {
+        statusKey = 'Done';
+      } else if (statusLower === 'todo') {
+        statusKey = 'To Do';
+      } else if (statusLower === 'inprogress' || statusLower === 'in progress' || statusLower === 'in_progress') {
+        statusKey = 'In Progress';
+      } else if (statusLower === 'review') {
+        statusKey = 'Review';
+      }
+
       const taskData = {
         id: task.id,
+        raw: task, // Keep original task object
         title: task.name || task.title,
         description: task.description || '',
+        status: statusKey, // Normalized status for UI
         priority: task.priority || 'medium',
-        status: statusKey,
         dueDate: task.dueDate ? formatDate(task.dueDate) : null,
+        assignedTo: {
+          name: task.assignedTo || 'Unassigned',
+          initials: (task.assignedTo || 'U').substring(0, 2).toUpperCase(),
+        },
         progress: task.progress || 0,
-        assignedTo: task.assignedTo ? {
-          name: task.assignedTo,
-          initials: task.assignedTo.substring(0, 2).toUpperCase(),
-        } : null,
+        isOverdue: false, // You can add overdue logic here if needed
+        daysOverdue: 0,
       };
 
-      // Calculate overdue
-      if (taskData.dueDate && task.dueDate) {
+      // Helper to check if overdue
+      if (task.dueDate && statusKey !== 'Done') {
         const due = new Date(task.dueDate);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (due < today && statusKey !== 'Done') {
-          const diff = Math.ceil((today - due) / (1000 * 60 * 60 * 24));
+        const now = new Date();
+        now.setHours(0, 0, 0, 0); // Reset time part for fair comparison
+        if (due < now) {
           taskData.isOverdue = true;
-          taskData.daysOverdue = diff;
+          const diffTime = Math.abs(now - due);
+          taskData.daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         }
       }
 
@@ -450,38 +850,58 @@ export default function ProjectDetailScreen() {
   // Calculate project metrics
   const metrics = useMemo(() => {
     const totalTasks = projectTasks.length;
-    const completedTasks = projectTasks.filter(t => 
-      t.status?.toLowerCase() === 'completed' || t.status?.toLowerCase() === 'done'
-    ).length;
+    const completedTasks = projectTasks.filter(t => {
+      const status = t.status || 'todo';
+      const statusLower = status.toLowerCase();
+      return statusLower === 'completed' || statusLower === 'done' || t.progress === 100;
+    }).length;
+
     const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
     // Calculate days remaining
     let daysRemaining = 0;
     if (project?.endDate) {
       const end = new Date(project.endDate);
-      const today = new Date();
-      const diff = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
-      daysRemaining = diff > 0 ? diff : 0;
+      const now = new Date();
+      const diffTime = end - now;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      daysRemaining = diffDays > 0 ? diffDays : 0;
     }
 
     // Calculate status
     let status = 'Active';
-    if (project?.endDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (project?.startDate && project?.endDate) {
+      const start = new Date(project.startDate);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(project.endDate);
-      const today = new Date();
+      end.setHours(0, 0, 0, 0);
+
       if (end < today) {
         status = 'Completed';
-      } else if (project?.startDate) {
-        const start = new Date(project.startDate);
-        if (start > today) {
-          status = 'Planning';
-        }
+      } else if (start > today) {
+        status = 'Planning';
+      } else {
+        // start <= today <= end
+        status = 'Active';
+      }
+    } else if (project?.endDate) {
+      const end = new Date(project.endDate);
+      end.setHours(0, 0, 0, 0);
+      if (end < today) {
+        status = 'Completed';
+      } else {
+        status = 'Active';
       }
     } else if (project?.startDate) {
       const start = new Date(project.startDate);
-      const today = new Date();
+      start.setHours(0, 0, 0, 0);
       if (start > today) {
         status = 'Planning';
+      } else {
+        status = 'Active';
       }
     }
 
@@ -532,6 +952,14 @@ export default function ProjectDetailScreen() {
             <Ionicons name="arrow-back" size={20} color="#111827" />
             <Text style={styles.backText}>Back to Projects</Text>
           </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.actionButton} onPress={handleOpenEditModal}>
+              <Ionicons name="pencil" size={20} color="#2563EB" />
+            </Pressable>
+            <Pressable style={[styles.actionButton, styles.deleteButton]} onPress={handleDeleteProject}>
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            </Pressable>
+          </View>
         </View>
 
         {/* Project Title Card */}
@@ -589,14 +1017,7 @@ export default function ProjectDetailScreen() {
               <Text style={styles.metricSubtext}>days remaining</Text>
             </View>
 
-            <View style={styles.metricItem}>
-              <View style={[styles.metricIconWrapper, { backgroundColor: '#D1FAE5' }]}>
-                <Ionicons name="cash-outline" size={20} color="#059669" />
-              </View>
-              <Text style={styles.metricLabel}>Budget</Text>
-              <Text style={styles.metricValue}>$0</Text>
-              <Text style={styles.metricSubtext}>allocated</Text>
-            </View>
+
 
             <View style={styles.metricItem}>
               <View style={[styles.metricIconWrapper, { backgroundColor: '#E0ECFF' }]}>
@@ -665,7 +1086,7 @@ export default function ProjectDetailScreen() {
             <View style={styles.teamCountBadge}>
               <Text style={styles.teamCountText}>{teamMembers.length}</Text>
             </View>
-            <Pressable 
+            <Pressable
               style={styles.addMemberButton}
               onPress={() => setShowAddMemberModal(true)}
             >
@@ -714,7 +1135,7 @@ export default function ProjectDetailScreen() {
                     {availableUsers.length === 0 ? (
                       <View style={styles.emptyDropdown}>
                         <Text style={styles.emptyDropdownText}>
-                          {searchQuery 
+                          {searchQuery
                             ? 'No users found. Try adjusting your search.'
                             : 'All users are already members of this project.'
                           }
@@ -723,7 +1144,7 @@ export default function ProjectDetailScreen() {
                     ) : (
                       availableUsers.map((user) => {
                         const isSelected = selectedUser === user.username;
-                        
+
                         return (
                           <Pressable
                             key={user.id}
@@ -776,14 +1197,14 @@ export default function ProjectDetailScreen() {
                   </View>
                 )}
                 <View style={styles.modalActions}>
-                  <Pressable 
+                  <Pressable
                     style={styles.cancelButton}
                     onPress={handleCloseModal}
                     disabled={isAddingMember}
                   >
                     <Text style={styles.cancelButtonText}>Cancel</Text>
                   </Pressable>
-                  <Pressable 
+                  <Pressable
                     style={[
                       styles.createButton,
                       (!selectedUser || isAddingMember) && styles.createButtonDisabled
@@ -801,109 +1222,450 @@ export default function ProjectDetailScreen() {
           </View>
         </Modal>
 
+        {/* Edit Project Modal */}
+        <Modal
+          visible={showEditProjectModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowEditProjectModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Sửa Dự Án</Text>
+                <Pressable onPress={() => setShowEditProjectModal(false)}>
+                  <Ionicons name="close" size={24} color="#6B7280" />
+                </Pressable>
+              </View>
+              <View style={styles.modalContent}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Tên dự án *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editProjectName}
+                    onChangeText={setEditProjectName}
+                    placeholder="Nhập tên dự án"
+                  />
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Mô tả</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={editProjectDescription}
+                    onChangeText={setEditProjectDescription}
+                    placeholder="Nhập mô tả dự án"
+                    multiline={true}
+                    numberOfLines={3}
+
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.dateRow}>
+                  <View style={[styles.formGroup, styles.dateInputGroup]}>
+                    <Text style={styles.label}>Ngày bắt đầu</Text>
+                    <Pressable
+                      style={styles.dateButton}
+                      onPress={() => {
+                        if (editStartDate) {
+                          setTempStartDate(new Date(editStartDate));
+                        } else {
+                          setTempStartDate(new Date());
+                        }
+                        setShowStartDatePicker(!showStartDatePicker); // Toggle for iOS inline
+                        setShowEndDatePicker(false); // Close other picker
+                      }}
+                    >
+                      <Text style={[styles.dateButtonText, !editStartDate && styles.dateButtonTextPlaceholder]}>
+                        {editStartDate ? formatDateForDisplay(editStartDate) : 'Chọn ngày'}
+                      </Text>
+                      <Ionicons name="calendar-outline" size={20} color="#6B7280" />
+                    </Pressable>
+                    {Platform.OS === 'ios' && showStartDatePicker && (
+                      <DateTimePicker
+                        value={tempStartDate}
+                        mode="date"
+                        display="spinner"
+                        onChange={onStartDateChange}
+                        style={styles.datePickerIOSInline}
+                        textColor="#000000"
+                      />
+                    )}
+                  </View>
+                  <View style={[styles.formGroup, styles.dateInputGroup]}>
+                    <Text style={styles.label}>Ngày kết thúc</Text>
+                    <Pressable
+                      style={styles.dateButton}
+                      onPress={() => {
+                        if (editEndDate) {
+                          setTempEndDate(new Date(editEndDate));
+                        } else {
+                          setTempEndDate(new Date());
+                        }
+                        setShowEndDatePicker(!showEndDatePicker); // Toggle for iOS inline
+                        setShowStartDatePicker(false); // Close other picker
+                      }}
+                    >
+                      <Text style={[styles.dateButtonText, !editEndDate && styles.dateButtonTextPlaceholder]}>
+                        {editEndDate ? formatDateForDisplay(editEndDate) : 'Chọn ngày'}
+                      </Text>
+                      <Ionicons name="calendar-outline" size={20} color="#6B7280" />
+                    </Pressable>
+                    {Platform.OS === 'ios' && showEndDatePicker && (
+                      <DateTimePicker
+                        value={tempEndDate}
+                        mode="date"
+                        display="spinner"
+                        onChange={onEndDateChange}
+                        style={styles.datePickerIOSInline}
+                        minimumDate={tempStartDate}
+                        textColor="#000000"
+                      />
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <Pressable
+                    style={styles.cancelButton}
+                    onPress={() => setShowEditProjectModal(false)}
+                    disabled={isEditingProject}
+                  >
+                    <Text style={styles.cancelButtonText}>Hủy</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.createButton, isEditingProject && styles.createButtonDisabled]}
+                    onPress={handleUpdateProject}
+                    disabled={isEditingProject}
+                  >
+                    <Text style={styles.createButtonText}>
+                      {isEditingProject ? 'Đang lưu...' : 'Lưu thay đổi'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Android Date Picker Logic (Invisible, just triggers system dialog) */}
+        {Platform.OS === 'android' && showStartDatePicker && (
+          <DateTimePicker
+            value={tempStartDate}
+            mode="date"
+            display="default"
+            onChange={onStartDateChange}
+          />
+        )}
+
+        {Platform.OS === 'android' && showEndDatePicker && (
+          <DateTimePicker
+            value={tempEndDate}
+            mode="date"
+            display="default"
+            onChange={onEndDateChange}
+            minimumDate={tempStartDate}
+          />
+        )}
+
         {/* Tasks Section */}
         <View style={styles.sectionCard}>
           <View style={styles.tasksHeader}>
             <Text style={styles.sectionTitle}>Tasks</Text>
-            <Pressable style={styles.newTaskButton} onPress={() => router.push('/add-task')}>
+            <Pressable
+              style={styles.newTaskButton}
+              onPress={() => router.push({
+                pathname: '/add-task',
+                params: { projectId: project?.id }
+              })}
+            >
               <Ionicons name="add" size={18} color="#fff" />
               <Text style={styles.newTaskButtonText}>New Task</Text>
             </Pressable>
           </View>
 
-          {/* Kanban Board */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.kanbanContainer}>
-            {['To Do', 'In Progress', 'Review', 'Done'].map((status) => {
-              const statusTasks = tasksByStatus[status] || [];
-              return (
-                <View key={status} style={styles.kanbanColumn}>
-                  <View style={styles.kanbanHeader}>
-                    <View style={[styles.statusDot, 
+
+          {/* Tabs */}
+          <View style={styles.tabsRow}>
+            {['Board', 'Completed'].map((tab) => (
+              <Pressable
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                style={[styles.tabPill, activeTab === tab && styles.tabPillActive]}
+              >
+                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+                  {tab}
+                  {tab === 'Completed' && ` (${tasksByStatus['Done']?.length || 0})`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Kanban Board - Show only if activeTab is Board */}
+          {activeTab === 'Board' && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.kanbanContainer}>
+              {['To Do', 'In Progress', 'Review'].map((status) => {
+                const statusTasks = tasksByStatus[status] || [];
+                return (
+                  <View key={status} style={styles.kanbanColumn}>
+                    <View style={styles.kanbanHeader}>
+                      <View style={[styles.statusDot,
                       status === 'To Do' && styles.statusDotGray,
                       status === 'In Progress' && styles.statusDotBlue,
                       status === 'Review' && styles.statusDotYellow,
-                      status === 'Done' && styles.statusDotGreen,
-                    ]} />
-                    <Text style={styles.kanbanTitle}>{status}</Text>
-                    <Text style={styles.kanbanCount}>{statusTasks.length}</Text>
+                      ]} />
+                      <Text style={styles.kanbanTitle}>{status}</Text>
+                      <Text style={styles.kanbanCount}>{statusTasks.length}</Text>
+                    </View>
+
+                    {statusTasks.map((task) => (
+                      <View key={task.id} style={styles.taskCard}>
+                        <View style={styles.taskCardHeader}>
+                          <View style={styles.taskTitleRow}>
+                            <Pressable
+                              style={styles.taskCheckButton}
+                              onPress={() => handleToggleTaskStatus(task.raw || { id: task.id, status: task.status })}
+                            >
+                              <Ionicons
+                                name="ellipse-outline"
+                                size={24}
+                                color="#9CA3AF"
+                              />
+                            </Pressable>
+                            <Text style={styles.taskCardTitle}>
+                              {task.title}
+                            </Text>
+                          </View>
+                          <View style={styles.taskActions}>
+                            {task.priority && (
+                              <View style={[styles.priorityBadge,
+                              (task.priority.toLowerCase() === 'high' || task.priority === 'High') && styles.priorityHigh,
+                              (task.priority.toLowerCase() === 'medium' || task.priority === 'Medium') && styles.priorityMedium,
+                              (task.priority.toLowerCase() === 'low' || task.priority === 'Low') && styles.priorityLow,
+                              ]}>
+                                <Text style={[styles.priorityText,
+                                (task.priority.toLowerCase() === 'high' || task.priority === 'High') && styles.priorityTextHigh,
+                                (task.priority.toLowerCase() === 'medium' || task.priority === 'Medium') && styles.priorityTextMedium,
+                                (task.priority.toLowerCase() === 'low' || task.priority === 'Low') && styles.priorityTextLow,
+                                ]}>
+                                  {task.priority.charAt(0).toUpperCase() + task.priority.slice(1).toLowerCase()}
+                                </Text>
+                              </View>
+                            )}
+                            <Pressable
+                              onPress={() => {
+                                console.log('Delete button pressed:', { id: task.id, title: task.title });
+                                handleDeleteTask(task.id, task.title);
+                              }}
+                              style={styles.taskDeleteButton}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                              <Ionicons name="trash-outline" size={18} color="#9AA3AE" />
+                            </Pressable>
+                          </View>
+                        </View>
+
+                        {task.description && (
+                          <Text style={styles.taskDescription}>{task.description}</Text>
+                        )}
+
+                        {task.status && (
+                          <View style={[styles.taskStatusBadge,
+                          task.status === 'To Do' && styles.taskStatusToDo,
+                          task.status === 'In Progress' && styles.taskStatusInProgress,
+                          ]}>
+                            <Text style={styles.taskStatusText}>{task.status}</Text>
+                          </View>
+                        )}
+
+                        {task.assignedTo && (
+                          <View style={styles.taskAssigned}>
+                            <View style={styles.taskAssignedAvatar}>
+                              <Text style={styles.taskAssignedInitials}>{task.assignedTo.initials}</Text>
+                            </View>
+                            <Text style={styles.taskAssignedName}>{task.assignedTo.name}</Text>
+                          </View>
+                        )}
+
+                        {task.progress !== undefined && task.progress !== null && (
+                          <View style={styles.taskProgress}>
+                            <Ionicons name="checkmark-circle-outline" size={16} color="#6B7280" />
+                            <View style={styles.taskProgressBar}>
+                              <View style={[styles.taskProgressBarFill, { width: `${task.progress}%` }]} />
+                            </View>
+                            <Text style={styles.taskProgressPercent}>{task.progress}%</Text>
+                          </View>
+                        )}
+
+                        {task.dueDate && (
+                          <View style={styles.taskDueDate}>
+                            <Ionicons
+                              name={task.isOverdue ? "alert-circle" : "calendar-outline"}
+                              size={16}
+                              color={task.isOverdue ? "#DC2626" : "#6B7280"}
+                            />
+                            <Text style={[styles.taskDueDateText, task.isOverdue && styles.taskDueDateOverdue]}>
+                              {task.dueDate}
+                              {task.isOverdue && ` (${task.daysOverdue} days overdue)`}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ))}
                   </View>
-                  
-                  {statusTasks.map((task) => (
-                    <View key={task.id} style={styles.taskCard}>
-                      <View style={styles.taskCardHeader}>
-                        <Text style={styles.taskCardTitle}>{task.title}</Text>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Completed List - Show only if activeTab is Completed */}
+          {activeTab === 'Completed' && (
+            <View style={styles.completedListContainer}>
+              {tasksByStatus['Done'].length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <Ionicons name="checkmark-done-circle-outline" size={48} color="#D1D5DB" />
+                  <Text style={styles.emptyStateText}>No completed tasks yet</Text>
+                </View>
+              ) : (
+                tasksByStatus['Done'].map((task) => (
+                  <View key={task.id} style={styles.taskCard}>
+                    <View style={styles.taskCardHeader}>
+                      <View style={styles.taskTitleRow}>
+                        <Pressable
+                          style={styles.taskCheckButton}
+                          onPress={() => handleToggleTaskStatus(task.raw || { id: task.id, status: task.status })}
+                        >
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={24}
+                            color="#10B981"
+                          />
+                        </Pressable>
+                        <Text style={[styles.taskCardTitle, styles.taskTitleCompleted]}>
+                          {task.title}
+                        </Text>
+                      </View>
+                      <View style={styles.taskActions}>
                         {task.priority && (
-                          <View style={[styles.priorityBadge, 
-                            (task.priority.toLowerCase() === 'high' || task.priority === 'High') && styles.priorityHigh,
-                            (task.priority.toLowerCase() === 'medium' || task.priority === 'Medium') && styles.priorityMedium,
-                            (task.priority.toLowerCase() === 'low' || task.priority === 'Low') && styles.priorityLow,
+                          <View style={[styles.priorityBadge,
+                          (task.priority.toLowerCase() === 'high' || task.priority === 'High') && styles.priorityHigh,
+                          (task.priority.toLowerCase() === 'medium' || task.priority === 'Medium') && styles.priorityMedium,
+                          (task.priority.toLowerCase() === 'low' || task.priority === 'Low') && styles.priorityLow,
                           ]}>
                             <Text style={[styles.priorityText,
-                              (task.priority.toLowerCase() === 'high' || task.priority === 'High') && styles.priorityTextHigh,
-                              (task.priority.toLowerCase() === 'medium' || task.priority === 'Medium') && styles.priorityTextMedium,
-                              (task.priority.toLowerCase() === 'low' || task.priority === 'Low') && styles.priorityTextLow,
+                            (task.priority.toLowerCase() === 'high' || task.priority === 'High') && styles.priorityTextHigh,
+                            (task.priority.toLowerCase() === 'medium' || task.priority === 'Medium') && styles.priorityTextMedium,
+                            (task.priority.toLowerCase() === 'low' || task.priority === 'Low') && styles.priorityTextLow,
                             ]}>
                               {task.priority.charAt(0).toUpperCase() + task.priority.slice(1).toLowerCase()}
                             </Text>
                           </View>
                         )}
+                        <Pressable
+                          onPress={() => {
+                            console.log('Delete button pressed:', { id: task.id, title: task.title });
+                            handleDeleteTask(task.id, task.title);
+                          }}
+                          style={styles.deleteButton}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#9AA3AE" />
+                        </Pressable>
                       </View>
-                      
-                      {task.description && (
-                        <Text style={styles.taskDescription}>{task.description}</Text>
-                      )}
-                      
-                      {task.status && (
-                        <View style={[styles.taskStatusBadge,
-                          task.status === 'To Do' && styles.taskStatusToDo,
-                          task.status === 'In Progress' && styles.taskStatusInProgress,
-                          task.status === 'Done' && styles.taskStatusDone,
-                        ]}>
-                          <Text style={styles.taskStatusText}>{task.status}</Text>
-                        </View>
-                      )}
-                      
-                      {task.assignedTo && (
-                        <View style={styles.taskAssigned}>
-                          <View style={styles.taskAssignedAvatar}>
-                            <Text style={styles.taskAssignedInitials}>{task.assignedTo.initials}</Text>
-                          </View>
-                          <Text style={styles.taskAssignedName}>{task.assignedTo.name}</Text>
-                        </View>
-                      )}
-                      
-                      {task.progress !== undefined && task.progress !== null && (
-                        <View style={styles.taskProgress}>
-                          <Ionicons name="checkmark-circle-outline" size={16} color="#6B7280" />
-                          <View style={styles.taskProgressBar}>
-                            <View style={[styles.taskProgressBarFill, { width: `${task.progress}%` }]} />
-                          </View>
-                          <Text style={styles.taskProgressPercent}>{task.progress}%</Text>
-                        </View>
-                      )}
-                      
-                      {task.dueDate && (
-                        <View style={styles.taskDueDate}>
-                          <Ionicons 
-                            name={task.isOverdue ? "alert-circle" : "calendar-outline"} 
-                            size={16} 
-                            color={task.isOverdue ? "#DC2626" : "#6B7280"} 
-                          />
-                          <Text style={[styles.taskDueDateText, task.isOverdue && styles.taskDueDateOverdue]}>
-                            {task.dueDate}
-                            {task.isOverdue && ` (${task.daysOverdue} days overdue)`}
-                          </Text>
-                        </View>
-                      )}
                     </View>
-                  ))}
-                </View>
-              );
-            })}
-          </ScrollView>
+
+                    {task.description && (
+                      <Text style={styles.taskDescription}>{task.description}</Text>
+                    )}
+
+                    <View style={[styles.taskStatusBadge, styles.taskStatusDone]}>
+                      <Text style={styles.taskStatusText}>Done</Text>
+                    </View>
+
+                    {task.assignedTo && (
+                      <View style={styles.taskAssigned}>
+                        <View style={styles.taskAssignedAvatar}>
+                          <Text style={styles.taskAssignedInitials}>{task.assignedTo.initials}</Text>
+                        </View>
+                        <Text style={styles.taskAssignedName}>{task.assignedTo.name}</Text>
+                      </View>
+                    )}
+
+                    {task.dueDate && (
+                      <View style={styles.taskDueDate}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={16}
+                          color="#6B7280"
+                        />
+                        <Text style={styles.taskDueDateText}>
+                          {task.dueDate}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelDeleteTask}
+      >
+        <Pressable
+          style={styles.deleteModalOverlay}
+          onPress={cancelDeleteTask}
+        >
+          <Pressable style={styles.deleteModalContent} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.deleteIconContainer}>
+              <View style={styles.deleteIconWrapper}>
+                <Ionicons name="trash" size={32} color="#EF4444" />
+              </View>
+            </View>
+            <Text style={styles.deleteModalTitle}>Delete Task</Text>
+            <Text style={styles.deleteModalMessage}>
+              Are you sure you want to delete &quot;{taskToDelete?.title}&quot;? This action cannot be undone.
+            </Text>
+            <View style={styles.deleteModalActions}>
+              <Pressable
+                style={styles.deleteCancelButton}
+                onPress={cancelDeleteTask}
+              >
+                <Text style={styles.deleteCancelText}>CANCEL</Text>
+              </Pressable>
+              <Pressable
+                style={styles.deleteConfirmButton}
+                onPress={() => {
+                  if (!taskToDelete) {
+                    console.error('Delete button pressed but taskToDelete is null');
+                    Toast.show({
+                      type: 'error',
+                      text1: 'Lỗi',
+                      text2: 'Không tìm thấy thông tin task. Vui lòng thử lại.',
+                      position: 'top',
+                      visibilityTime: 3000,
+                      topOffset: 60,
+                    });
+                    setShowDeleteConfirm(false);
+                    return;
+                  }
+                  console.log('Delete button pressed with taskToDelete:', taskToDelete);
+                  confirmDeleteTask();
+                }}
+              >
+                <Text style={styles.deleteConfirmText}>DELETE</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView >
   );
 }
 
@@ -918,12 +1680,31 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   headerSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 4,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButton: {
+    backgroundColor: '#FEF2F2',
   },
   backText: {
     fontSize: 14,
@@ -1579,5 +2360,353 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+  },
+  taskTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  taskCheckButton: {
+    marginRight: 8,
+  },
+  taskTitleCompleted: {
+    textDecorationLine: 'line-through',
+    color: '#9CA3AF',
+  },
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: '#111827',
+  },
+  textArea: {
+    minHeight: 80,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  dateInputGroup: {
+    flex: 1,
+  },
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+  },
+  dateButtonText: {
+    fontSize: 14,
+    color: '#111827',
+  },
+  dateButtonTextPlaceholder: {
+    color: '#9CA3AF',
+  },
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  datePickerContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    width: '90%',
+    maxWidth: 400,
+    padding: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  datePickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  calendarContainer: {
+    marginBottom: 20,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  calendarNavButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  calendarMonthText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    textTransform: 'capitalize',
+  },
+  calendarDayNames: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  calendarDayName: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    paddingVertical: 8,
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calendarDay: {
+    width: '14.28%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  calendarDayToday: {
+    backgroundColor: '#E0ECFF',
+  },
+  calendarDaySelected: {
+    backgroundColor: '#2563EB',
+  },
+  calendarDayPast: {
+    opacity: 0.3,
+  },
+  calendarDayText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+  },
+  calendarDayTextToday: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  calendarDayTextSelected: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  calendarDayTextPast: {
+    color: '#9CA3AF',
+  },
+  datePickerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  datePickerButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePickerButtonPrimary: {
+    backgroundColor: '#2563EB',
+  },
+  datePickerButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  datePickerButtonTextPrimary: {
+    color: '#fff',
+  },
+  taskCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  taskTitleCompleted: {
+    textDecorationLine: 'line-through',
+    color: '#9CA3AF',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  tabPill: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginRight: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabPillActive: {
+    borderBottomColor: '#2563EB',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  tabTextActive: {
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  completedListContainer: {
+    gap: 12,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    gap: 12,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  taskActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskDeleteButton: {
+    padding: 4,
+    borderRadius: 4,
+  },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  deleteIconContainer: {
+    marginBottom: 16,
+  },
+  deleteIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  deleteModalMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  deleteCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
+  deleteCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    letterSpacing: 0.5,
+  },
+  deleteConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+  },
+  deleteConfirmText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  datePickerContentIOS: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    width: '90%',
+    maxWidth: 400,
+    paddingBottom: 20,
+    overflow: 'hidden',
+  },
+  datePickerHeaderIOS: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  datePickerTitleIOS: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  datePickerCancelText: {
+    fontSize: 16,
+    color: '#EF4444',
+  },
+  datePickerDoneText: {
+    fontSize: 16,
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  datePickerIOS: {
+    width: '100%',
+    backgroundColor: 'white',
+  },
+  datePickerIOSInline: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    marginTop: 8,
   },
 });
